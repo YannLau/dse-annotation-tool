@@ -228,7 +228,9 @@ function SchemaEditor({
     [preview, setPreview] = useState<Obj | null>(null),
     [newKey, setNewKey] = useState(""),
     [lp, setLp] = useState(2),
-    [rp, setRp] = useState(4);
+    [rp, setRp] = useState(4),
+    [deletion, setDeletion] = useState<Obj | null>(null),
+    [deletionHistory, setDeletionHistory] = useState<Obj[]>([]);
   useEffect(() => {
     const key = "dse-schema-draft:" + workspace + ":" + schema.version;
     const saved = localStorage.getItem(key);
@@ -268,6 +270,91 @@ function SchemaEditor({
       notify(e.message);
     }
   }
+  async function previewDeletion(fieldId: string, classId?: number) {
+    try {
+      const plan = await api("/schema/delete-preview", {
+        schema: draft,
+        field_id: fieldId,
+        class_id: classId,
+      });
+      setDeletion({
+        ...plan,
+        base: JSON.stringify(draft),
+        label:
+          classId === undefined
+            ? `字段 ${fieldId}`
+            : `${fieldId} 的类别 ${classId}`,
+      });
+    } catch (e: any) {
+      notify(e.message);
+    }
+  }
+  function applyDeletion() {
+    if (!deletion?.allowed) return;
+    if (deletion.base !== JSON.stringify(draft)) {
+      setDeletion(null);
+      notify("草稿已变化，请重新检查删除依赖");
+      return;
+    }
+    setDeletionHistory((history) => [
+      ...history,
+      {
+        schema: structuredClone(draft),
+        index,
+        field_id: deletion.field_id,
+        class_id: deletion.class_id,
+      },
+    ]);
+    setDraft(deletion.schema_after);
+    setIndex(Math.min(index, deletion.schema_after.fields.length - 1));
+    setPreview(null);
+    setDeletion(null);
+    notify("已从草稿删除；发布后生效。历史标签与原 ID 保留且不复用。");
+  }
+  function undoDeletion() {
+    const last = deletionHistory[deletionHistory.length - 1];
+    if (!last) return;
+    const next = structuredClone(draft),
+      original = last.schema.fields.find(
+        (f: Obj) => f.field_id === last.field_id,
+      );
+    if (last.class_id === null || last.class_id === undefined) {
+      if (next.fields.some((f: Obj) => f.field_id === last.field_id))
+        return notify("字段 key 已被草稿占用，请先修复");
+      next.fields.splice(
+        Math.min(last.index, next.fields.length),
+        0,
+        structuredClone(original),
+      );
+      if (next.retired_fields) delete next.retired_fields[last.field_id];
+    } else {
+      const field = next.fields.find((f: Obj) => f.field_id === last.field_id),
+        category = original.classes.find((c: Obj) => c.id === last.class_id);
+      if (!field) return notify("字段已不存在，请先恢复字段");
+      if (
+        field.classes.some(
+          (c: Obj) => c.id === category.id || c.key === category.key,
+        )
+      )
+        return notify("类别 ID/key 已被草稿占用，请先修复");
+      const index = original.classes.findIndex(
+        (c: Obj) => c.id === last.class_id,
+      );
+      field.classes.splice(
+        Math.min(index, field.classes.length),
+        0,
+        structuredClone(category),
+      );
+      if (next.retired_classes?.[last.field_id])
+        next.retired_classes[last.field_id] = next.retired_classes[
+          last.field_id
+        ].filter((c: Obj) => c.id !== last.class_id);
+    }
+    setDraft(next);
+    setIndex(next.fields.findIndex((f: Obj) => f.field_id === last.field_id));
+    setDeletionHistory((h) => h.slice(0, -1));
+    setPreview(null);
+  }
   return (
     <section className="schema-layout">
       <aside>
@@ -288,8 +375,12 @@ function SchemaEditor({
         />
         <button
           onClick={() => {
-            if (!newKey || draft.fields.some((f: Obj) => f.field_id === newKey))
-              return notify("请输入唯一字段 key");
+            if (
+              !newKey ||
+              draft.fields.some((f: Obj) => f.field_id === newKey) ||
+              draft.retired_fields?.[newKey]
+            )
+              return notify("请输入唯一且未删除过的字段 key");
             setDraft({
               ...draft,
               fields: [
@@ -332,7 +423,22 @@ function SchemaEditor({
         </button>
       </aside>
       <article>
-        <h2>{field.field_id}</h2>
+        <div className="schema-field-heading">
+          <h2>{field.field_id}</h2>
+          <button
+            className="danger"
+            onClick={() => previewDeletion(field.field_id)}
+          >
+            删除字段
+          </button>
+          {deletionHistory.length > 0 && (
+            <button onClick={undoDeletion}>撤销本次删除</button>
+          )}
+        </div>
+        <p className="footnote">
+          删除前检查规则引用与 unknown 关联；已发布 ID
+          不回收，旧版本和历史标注保留。
+        </p>
         <div className="grid2">
           <label>
             显示名
@@ -445,23 +551,35 @@ function SchemaEditor({
             >
               ↑
             </button>
+            <button
+              className="danger"
+              aria-label={`删除类别 ${field.field_id} ${c.id}`}
+              onClick={() => previewDeletion(field.field_id, c.id)}
+            >
+              删除
+            </button>
           </div>
         ))}
         <button
-          onClick={() =>
+          onClick={() => {
+            const reserved = draft.retired_classes?.[field.field_id] || [];
+            const id =
+              Math.max(
+                -1,
+                ...[...field.classes, ...reserved].map((c: Obj) => c.id),
+              ) + 1;
+            let key = "new_" + id;
+            const keys = new Set(
+              [...field.classes, ...reserved].map((c: Obj) => c.key),
+            );
+            while (keys.has(key)) key += "_new";
             update({
               classes: [
                 ...field.classes,
-                {
-                  id: Math.max(...field.classes.map((c: Obj) => c.id)) + 1,
-                  key: "new_" + field.classes.length,
-                  label_zh: "新状态",
-                  color: "#60a5fa",
-                  shortcut: "",
-                },
+                { id, key, label_zh: "新状态", color: "#60a5fa", shortcut: "" },
               ],
-            })
-          }
+            });
+          }}
         >
           ＋类别
         </button>
@@ -539,6 +657,51 @@ function SchemaEditor({
           </>
         )}
       </article>
+      {deletion && (
+        <div className="schema-delete-overlay">
+          <div
+            className="schema-delete-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="删除依赖检查"
+          >
+            <h2>
+              {deletion.allowed ? "确认从草稿删除" : "无法删除"} ·{" "}
+              {deletion.label}
+            </h2>
+            {deletion.allowed ? (
+              <>
+                <p>
+                  将从待发布版本移出。现有{" "}
+                  {deletion.historical_annotation_records}{" "}
+                  条相关标注记录及旧版本仍保留；原字段 key / 类别 ID
+                  不会分配给其他含义。
+                </p>
+                <p>点击后可继续编辑，发布新版本才会生效。</p>
+              </>
+            ) : (
+              <>
+                <p>请先解除以下依赖，再重新删除：</p>
+                <ul>
+                  {deletion.blockers.map((reason: string) => (
+                    <li key={reason}>{reason}</li>
+                  ))}
+                </ul>
+              </>
+            )}
+            <div className="toolbar">
+              <button
+                className="danger"
+                disabled={!deletion.allowed}
+                onClick={applyDeletion}
+              >
+                确认从草稿删除
+              </button>
+              <button onClick={() => setDeletion(null)}>关闭 / 取消</button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -564,7 +727,10 @@ function App() {
     [search, setSearch] = useState(""),
     [range, setRange] = useState<[number, number]>([0, 1]),
     [interval, setBatchInterval] = useState(false),
+    [batchDraft, setBatchDraft] = useState<Obj>({ version: 0, changes: [] }),
     [preview, setPreview] = useState<Obj | null>(null),
+    [previewLoading, setPreviewLoading] = useState(false),
+    [futureHorizon, setFutureHorizon] = useState(0.25),
     [confirmed, setConfirmed] = useState(false),
     [playing, setPlaying] = useState(false),
     [speed, setSpeed] = useState(1),
@@ -656,7 +822,6 @@ function App() {
       setFrame(f);
       setZoom(null);
       setRange([f, f + 1]);
-      setPreview(null);
     } catch (e) {
       fail(e);
       setLoading(false);
@@ -670,6 +835,14 @@ function App() {
         if (pref.mode) setMode(pref.mode);
         if (pref.taskSettings) setTaskSettings(pref.taskSettings);
         if (pref.coordinate) setCoordinate(pref.coordinate);
+        if (pref.futureHorizon) setFutureHorizon(pref.futureHorizon);
+        try {
+          const saved = localStorage.getItem("dse-batch-draft:" + p.work_root);
+          const restored = saved ? JSON.parse(saved) : pref.batchDraft;
+          if (restored?.changes?.length) setBatchDraft(restored);
+        } catch {
+          /* Invalid local drafts never change saved annotations. */
+        }
         setDestination(
           p.work_root.replace(/\/[^/]+$/, "") + "/export-" + Date.now(),
         );
@@ -705,6 +878,8 @@ function App() {
           zoom,
           speed,
           interval,
+          batchDraft,
+          futureHorizon,
         }).catch(fail),
       400,
     );
@@ -721,26 +896,45 @@ function App() {
     zoom,
     speed,
     interval,
+    batchDraft,
+    futureHorizon,
   ]);
+  useEffect(() => {
+    if (project?.work_root && initial.current)
+      localStorage.setItem(
+        "dse-batch-draft:" + project.work_root,
+        JSON.stringify(batchDraft),
+      );
+  }, [batchDraft, project?.work_root]);
   useEffect(() => {
     if (!datasetKey) return;
     const version = ++requestVersion.current,
       controller = new AbortController();
     setLoading(true);
     setError("");
-    setPreview(null);
     setConfirmed(false);
     let blobs: string[] = [];
     const timer = setTimeout(async () => {
       try {
         const v = await api(
-          `/window/${datasetKey}/${episode}/${frame}?mode=${mode}&request_id=${version}`,
+          `/window/${datasetKey}/${episode}/${frame}?mode=${mode}&request_id=${version}&future_horizon=${futureHorizon}`,
           undefined,
           controller.signal,
         );
         const nextImages: Obj = {};
         await Promise.all(
-          v.history.map(async (h: Obj, t: number) => {
+          [
+            ...v.history.map((h: Obj, t: number) => ({
+              ...h,
+              imageKey: String(t),
+            })),
+            ...(mode === "behavior"
+              ? (v.future || []).map((h: Obj, t: number) => ({
+                  ...h,
+                  imageKey: "future:" + t,
+                }))
+              : []),
+          ].map(async (h: Obj) => {
             if (h.frame === null) return;
             await Promise.all(
               v.cameras.map(async (_: string, c: number) => {
@@ -760,7 +954,7 @@ function App() {
                   return;
                 const url = URL.createObjectURL(blob);
                 blobs.push(url);
-                nextImages[`${t}:${c}`] = url;
+                nextImages[`${h.imageKey}:${c}`] = url;
               }),
             );
           }),
@@ -784,7 +978,7 @@ function App() {
       controller.abort();
       blobs.forEach(URL.revokeObjectURL);
     };
-  }, [datasetKey, episode, frame, mode, refresh]);
+  }, [datasetKey, episode, frame, mode, refresh, futureHorizon]);
   useEffect(() => {
     if (playing)
       playbackClock.current = {
@@ -923,6 +1117,63 @@ function App() {
       point: !interval,
     };
   }
+  const focusFrame =
+    interval &&
+    range[0] >= 0 &&
+    range[0] < range[1] &&
+    range[1] <= n &&
+    !(range[0] <= frame && frame < range[1])
+      ? range[0]
+      : frame;
+  const draftToken = JSON.stringify([
+    batchDraft,
+    datasetKey,
+    episode,
+    focusFrame,
+    mode,
+    refresh,
+  ]);
+  const effectivePreview = preview?.token === draftToken ? preview : null;
+  useEffect(() => {
+    if (!batchDraft.changes.length || !datasetKey) {
+      setPreview(null);
+      setPreviewLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    let active = true;
+    setPreviewLoading(true);
+    const timer = setTimeout(() => {
+      api(
+        "/annotations/batch",
+        {
+          changes: batchDraft.changes,
+          expected_schema_version: batchDraft.version,
+          preview: true,
+          focus: { dataset: datasetKey, episode, frame: focusFrame, mode },
+        },
+        controller.signal,
+      )
+        .then((result) => {
+          if (active) {
+            setPreview({ ...result, token: draftToken });
+            setPreviewLoading(false);
+          }
+        })
+        .catch((e) => {
+          if (active && e.name !== "AbortError") {
+            setPreview(null);
+            setPreviewLoading(false);
+            fail(e);
+          }
+        });
+    }, 60);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [draftToken]);
   async function changeLabel(
     arm: string,
     field: string,
@@ -931,13 +1182,41 @@ function App() {
   ) {
     const body = annotation(arm, field, value, reviewed);
     if (interval) {
-      try {
-        const p = await api("/annotations", { ...body, preview: true });
-        setPreview({ body, ...p });
-      } catch (e) {
-        fail(e);
-      }
+      const sameTarget = (change: Obj) =>
+        [
+          "dataset",
+          "episode",
+          "start",
+          "end",
+          "arm",
+          "field",
+          "mode",
+          "point",
+        ].every((key) => change[key] === body[key as keyof typeof body]);
+      setBatchDraft((draft: Obj) => ({
+        version: draft.changes.length ? draft.version : schema!.version,
+        changes: [...draft.changes.filter((c: Obj) => !sameTarget(c)), body],
+      }));
+      setPreviewLoading(true);
+      notify("草稿已更新，门控自动重算；填写完成后一次确认整组");
     } else await mutate("/annotations", body);
+  }
+  function cancelBatch() {
+    setBatchDraft({ version: schema?.version || 0, changes: [] });
+    setPreview(null);
+    setPreviewLoading(false);
+    notify("已取消整组草稿，已保存标签不变");
+  }
+  async function commitBatch() {
+    const result = await mutate("/annotations/batch", {
+      changes: batchDraft.changes,
+      expected_schema_version: batchDraft.version,
+    });
+    if (result) {
+      setBatchDraft({ version: schema?.version || 0, changes: [] });
+      setPreview(null);
+      notify("整组标签已一次保存，可一次撤销整组");
+    }
   }
   async function importSource() {
     setBusy(true);
@@ -957,17 +1236,21 @@ function App() {
     }
   }
   async function reviewCurrent() {
+    if (batchDraft.changes.length)
+      return fail(Error("请先确认整组草稿，再审核已保存字段"));
     if (!confirmed && mode === "state")
       return fail(Error("先确认当前允许观测支持标签"));
+    const changes: Obj[] = [];
     for (const arm of ["left", "right", "global"])
       for (const f of schema!.fields) {
+        if ((f.evidence || "state") !== mode) continue;
         const r = view?.labels[arm]?.[f.field_id];
         if (
           r?.value_id !== null &&
           r?.value_id !== undefined &&
           r.applicability === "applicable"
-        ) {
-          const result = await mutate("/annotations", {
+        )
+          changes.push({
             ...annotation(arm, f.field_id, r.value_id, true),
             label_source: r.label_source || "human",
             provenance: r.provenance || {},
@@ -975,9 +1258,12 @@ function App() {
             end: frame + 1,
             point: true,
           });
-          if (!result) return;
-        }
       }
+    if (changes.length)
+      await mutate("/annotations/batch", {
+        changes,
+        expected_schema_version: schema!.version,
+      });
   }
   const scopeFields = (arm: string) =>
     schema?.fields.filter(
@@ -1026,7 +1312,24 @@ function App() {
               : "全局 GLOBAL"}
         </h3>
         {scopeFields(arm).map((f: Obj) => {
-          const r = view?.labels[arm]?.[f.field_id];
+          const r =
+            (interval
+              ? effectivePreview?.form_labels[arm]?.[f.field_id]
+              : null) || view?.labels[arm]?.[f.field_id];
+          const staged = interval
+            ? [...batchDraft.changes]
+                .reverse()
+                .find(
+                  (c: Obj) =>
+                    c.dataset === datasetKey &&
+                    c.episode === episode &&
+                    c.start <= focusFrame &&
+                    focusFrame < c.end &&
+                    c.arm === arm &&
+                    c.field === f.field_id &&
+                    c.mode === mode,
+                )
+            : undefined;
           return (
             <div
               className={
@@ -1046,9 +1349,12 @@ function App() {
               <select
                 aria-label={`${arm} ${f.field_id}`}
                 disabled={
-                  !aligned || busy || r?.applicability === "not_applicable"
+                  !aligned ||
+                  busy ||
+                  (interval && previewLoading) ||
+                  r?.applicability === "not_applicable"
                 }
-                value={r?.value_id ?? ""}
+                value={(staged ? staged.value : r?.value_id) ?? ""}
                 onChange={(e) =>
                   changeLabel(
                     arm,
@@ -1335,6 +1641,76 @@ function App() {
                 </div>
               )}
             </div>
+            {mode === "behavior" && (
+              <section className="future-reference" aria-label="未来帧参考">
+                <div className="future-heading">
+                  <h3>未来动作参考 · 决策帧固定 #{frame}</h3>
+                  <label>
+                    参考跨度
+                    <select
+                      aria-label="未来参考跨度"
+                      value={futureHorizon}
+                      onChange={(e) => setFutureHorizon(+e.target.value)}
+                    >
+                      {[0.25, 0.5, 1, 2, 5].map((s) => (
+                        <option key={s} value={s}>
+                          {s} 秒
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <p>
+                  用于 adviser / 动作复核；查看这些画面不会移动当前标签帧。自动
+                  adviser 窗口仍最多0.25秒，切回状态标注立即隐藏未来证据。
+                </p>
+                <div className="future-grid">
+                  <div className="history-label">相机</div>
+                  {[0, 1, 2].map((t) => (
+                    <div className="history-time" key={t}>
+                      t +{" "}
+                      {(
+                        view?.future?.[t]?.offset_seconds ??
+                        futureHorizon * [0.4, 0.8, 1][t]
+                      ).toFixed(3)}
+                      <small>
+                        {aligned &&
+                        view?.future?.[t]?.frame !== null &&
+                        view?.future?.[t]
+                          ? `#${view.future[t].frame} · ${view.future[t].timestamp.toFixed(3)}s`
+                          : "未来不足 / mask 0"}
+                      </small>
+                    </div>
+                  ))}
+                  {(view?.cameras || Object.keys(names)).map(
+                    (cam: string, c: number) => (
+                      <React.Fragment key={cam}>
+                        <div className="history-label">{names[cam] || cam}</div>
+                        {[0, 1, 2].map((t) => (
+                          <div className="history-cell" key={t}>
+                            {aligned && images[`future:${t}:${c}`] ? (
+                              <img
+                                alt={`${names[cam] || cam} 未来帧 ${view?.future?.[t]?.frame}`}
+                                src={images[`future:${t}:${c}`]}
+                                onClick={() => {
+                                  setModal(images[`future:${t}:${c}`]);
+                                  setScale(1);
+                                  setPan([0, 0]);
+                                }}
+                              />
+                            ) : (
+                              <span>
+                                {loading ? "同步中…" : "无有效未来帧"}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </React.Fragment>
+                    ),
+                  )}
+                </div>
+              </section>
+            )}
             <div className="timeline">
               <div className="transport">
                 <button aria-label="上一帧" onClick={() => navigate(-1)}>
@@ -1752,7 +2128,16 @@ function App() {
                 checked={interval}
                 onChange={(e) => {
                   setBatchInterval(e.target.checked);
-                  setPreview(null);
+                  if (
+                    e.target.checked &&
+                    range[0] >= 0 &&
+                    range[0] < range[1] &&
+                    range[1] <= n &&
+                    !(range[0] <= frame && frame < range[1])
+                  ) {
+                    setPlaying(false);
+                    setFrame(range[0]);
+                  }
                 }}
               />
               将下次赋值应用到明确选区
@@ -1769,27 +2154,87 @@ function App() {
                 ? ["global"]
                 : []),
             ].map(fieldPanel)}
-            {preview && (
-              <div className="batch-preview">
-                <b>覆盖预览</b>
+            {batchDraft.changes.length > 0 && (
+              <div className="batch-preview" aria-label="整组标注草稿">
+                <b>整组草稿 · {batchDraft.changes.length} 项待确认</b>
                 <p>
-                  {preview.body.arm}.{preview.body.field} →{" "}
-                  {preview.body.value ?? "missing"}
+                  选择值已显示；阶段与必填关系自动预览。
+                  {interval && focusFrame !== frame
+                    ? `门控参考选区首帧 #${focusFrame}。`
+                    : ""}
                 </p>
-                <p>
-                  影响 {preview.affected} · 跳过 {preview.skipped} · 适用未知{" "}
-                  {preview.needs_review} · 重叠 {preview.overlaps}
-                </p>
+                {batchDraft.changes.map((c: Obj, i: number) =>
+                  c.mode === mode ? (
+                    <div className="draft-change" key={i}>
+                      <span>
+                        EP {c.episode} [{c.start},{c.end}) · {c.arm}.{c.field} →{" "}
+                        {c.value ?? "missing"}
+                      </span>
+                      <button
+                        aria-label={`移除草稿 ${i + 1}`}
+                        disabled={busy}
+                        onClick={() =>
+                          setBatchDraft((draft: Obj) => ({
+                            ...draft,
+                            changes: draft.changes.filter(
+                              (_: Obj, j: number) => i !== j,
+                            ),
+                          }))
+                        }
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : null,
+                )}
+                {batchDraft.changes.some((c: Obj) => c.mode !== mode) && (
+                  <p>另有其他证据模式草稿；切换后可查看其内容。</p>
+                )}
+                {previewLoading ? (
+                  <p role="status">正在更新整组门控与覆盖范围…</p>
+                ) : (
+                  effectivePreview && (
+                    <p>
+                      字段帧合计：影响{" "}
+                      {effectivePreview.reports.reduce(
+                        (n: number, r: Obj) => n + r.affected,
+                        0,
+                      )}{" "}
+                      · 跳过{" "}
+                      {effectivePreview.reports.reduce(
+                        (n: number, r: Obj) => n + r.skipped,
+                        0,
+                      )}{" "}
+                      · 适用未知{" "}
+                      {effectivePreview.reports.reduce(
+                        (n: number, r: Obj) => n + r.needs_review,
+                        0,
+                      )}{" "}
+                      · 重叠{" "}
+                      {effectivePreview.reports.reduce(
+                        (n: number, r: Obj) => n + r.overlaps,
+                        0,
+                      )}
+                      <br />
+                      保留逐帧覆盖{" "}
+                      {effectivePreview.reports.reduce(
+                        (n: number, r: Obj) => n + r.point_overrides,
+                        0,
+                      )}{" "}
+                      个字段帧；提交后按各帧实际适用性生效。
+                    </p>
+                  )
+                )}
                 <button
                   className="primary"
-                  onClick={() => {
-                    mutate("/annotations", preview.body);
-                    setPreview(null);
-                  }}
+                  disabled={busy || previewLoading || !effectivePreview}
+                  onClick={commitBatch}
                 >
-                  确认按区间分割覆盖
+                  确认保存全部 {batchDraft.changes.length} 项
                 </button>
-                <button onClick={() => setPreview(null)}>取消</button>
+                <button disabled={busy} onClick={cancelBatch}>
+                  取消整组草稿
+                </button>
               </div>
             )}
             {mode === "state" && (
@@ -1804,7 +2249,12 @@ function App() {
             )}
             <button
               className="primary full"
-              disabled={!aligned || busy || (mode === "state" && !confirmed)}
+              disabled={
+                !aligned ||
+                busy ||
+                batchDraft.changes.length > 0 ||
+                (mode === "state" && !confirmed)
+              }
               onClick={reviewCurrent}
             >
               审核当前已填写字段
@@ -1849,7 +2299,13 @@ function App() {
           workspace={project?.work_root || ""}
           notify={notify}
           onPublish={() => {
-            loadProject().then(() => setRefresh((x) => x + 1));
+            loadProject().then(() => {
+              setRefresh((x) => x + 1);
+              if (datasetKey)
+                api("/datasets/" + datasetKey)
+                  .then(setDataset)
+                  .catch(fail);
+            });
           }}
         />
       )}

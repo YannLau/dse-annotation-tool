@@ -18,7 +18,15 @@ from pydantic import BaseModel, Field
 from .dataset import Dataset, content_fingerprint, verify_manifest
 from .exporter import Exporter
 from .store import Store
-from .schema import resolve, head_spec, semantic_errors, evaluate, validate_schema
+from .schema import (
+    resolve,
+    head_spec,
+    semantic_errors,
+    evaluate,
+    validate_schema,
+    deletion_plan,
+    prepare_schema,
+)
 from .assist import event_candidates, adviser_candidate
 
 
@@ -41,6 +49,20 @@ class AnnotationRequest(BaseModel):
     preview: bool = False
     label_source: Literal["human", "rule_suggestion", "test_fixture"] = "human"
     provenance: dict = Field(default_factory=dict)
+
+
+class AnnotationFocus(BaseModel):
+    dataset: str
+    episode: int
+    frame: int = Field(ge=0)
+    mode: Literal["state", "behavior"] = "state"
+
+
+class BatchAnnotationRequest(BaseModel):
+    changes: list[AnnotationRequest] = Field(min_length=1, max_length=128)
+    expected_schema_version: int = Field(ge=1)
+    preview: bool = False
+    focus: AnnotationFocus | None = None
 
 
 class SelectionRequest(BaseModel):
@@ -89,12 +111,20 @@ def create_app(work_root):
     @app.middleware("http")
     async def origin_guard(request, call_next):
         origin = request.headers.get("origin")
-        if origin and origin not in [
-            "http://127.0.0.1:8765",
-            "http://localhost:8765",
-            "http://127.0.0.1:5173",
-            "http://localhost:5173",
-        ]:
+        same_local_origin = origin == str(request.base_url).rstrip(
+            "/"
+        ) and request.url.hostname in ["127.0.0.1", "localhost"]
+        if (
+            origin
+            and not same_local_origin
+            and origin
+            not in [
+                "http://127.0.0.1:8765",
+                "http://localhost:8765",
+                "http://127.0.0.1:5173",
+                "http://localhost:5173",
+            ]
+        ):
             return JSONResponse({"detail": "只接受本机应用来源"}, status_code=403)
         return await call_next(request)
 
@@ -394,6 +424,7 @@ def create_app(work_root):
         frame: int,
         mode: Literal["state", "behavior"] = "state",
         request_id: int = 0,
+        future_horizon: float = Query(default=0.25, ge=0.25, le=10),
     ):
         ds = get_dataset(key)
         bounds(ds, episode, frame, frame + 1)
@@ -450,6 +481,10 @@ def create_app(work_root):
                 }
                 for i in history
             ],
+            "future": ds.future(episode, frame, future_horizon)
+            if mode == "behavior"
+            else [],
+            "evidence_mode": mode,
             "cameras": ds.cameras,
             "labels": labels,
             "telemetry": telemetry,
@@ -544,6 +579,63 @@ def create_app(work_root):
             body.provenance,
         )
 
+    @app.post("/api/annotations/batch")
+    def annotate_batch(body: BatchAnnotationRequest):
+        changes = []
+        for item in body.changes:
+            ds = get_dataset(item.dataset)
+            bounds(ds, item.episode, item.start, item.end)
+            if item.point and item.end != item.start + 1:
+                raise ValueError("逐帧覆盖仅能作用于一帧")
+            source, a, b = key_range(
+                ds, item.episode, item.start, item.end, item.dataset
+            )
+            changes.append(
+                dict(
+                    source=source,
+                    start=a,
+                    end=b,
+                    arm=item.arm,
+                    field=item.field,
+                    value=item.value,
+                    mode=item.mode,
+                    reviewed=item.reviewed,
+                    confirmed=item.confirmed,
+                    point=item.point,
+                    label_source=item.label_source,
+                    provenance=item.provenance,
+                )
+            )
+        focus = None
+        if body.focus:
+            item = body.focus
+            ds = get_dataset(item.dataset)
+            bounds(ds, item.episode, item.frame, item.frame + 1)
+            source, sf, _ = ds.source_key(item.episode, item.frame, item.dataset)
+            focus = {
+                "source": source,
+                "frame": sf,
+                "center": selected(item.dataset, item.episode, item.frame),
+            }
+        result = store.annotate_batch(
+            changes,
+            preview=body.preview,
+            expected_version=body.expected_schema_version,
+            focus=focus,
+        )
+        if body.focus and body.focus.mode == "state":
+            visible = {
+                f["field_id"]
+                for f in store.schema()["fields"]
+                if f.get("evidence", "state") == "state"
+            }
+            for key in ["labels", "form_labels"]:
+                result[key] = {
+                    arm: {field: r for field, r in fields.items() if field in visible}
+                    for arm, fields in result[key].items()
+                }
+        return result
+
     @app.get("/api/completeness/{key}/{episode}/{frame}")
     def completeness(key: str, episode: int, frame: int):
         ds = get_dataset(key)
@@ -581,10 +673,24 @@ def create_app(work_root):
             store.db.commit()
         return {"saved": True}
 
+    @app.post("/api/schema/delete-preview")
+    def schema_delete_preview(body: dict):
+        schema = body.get("schema", store.schema())
+        plan = deletion_plan(schema, body["field_id"], body.get("class_id"))
+        args = [body["field_id"]]
+        where = "field=?"
+        if body.get("class_id") is not None:
+            where += " AND value=?"
+            args.append(body["class_id"])
+        plan["historical_annotation_records"] = store.db.execute(
+            "SELECT COUNT(*) FROM annotations WHERE " + where, args
+        ).fetchone()[0]
+        return plan
+
     @app.post("/api/schema/preview")
     def schema_preview(body: dict):
-        schema = body.get("schema", store.schema())
-        validate_schema(schema)
+        schema = prepare_schema(body.get("schema", store.schema()), store.schema())
+        validate_schema(schema, store.schema())
         return {
             "migration": store.publish(schema, True),
             "labels": resolve(

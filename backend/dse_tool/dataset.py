@@ -255,6 +255,24 @@ class Dataset:
             ]
         ]
 
+    def future(self, episode, frame, horizon=0.25):
+        """Behavior reference only: actual rows no later than each future target."""
+        times = np.asarray(self.table(episode)["timestamp"].to_pylist())
+        now = times[frame]
+        result = []
+        for offset in [horizon * 0.4, horizon * 0.8, horizon]:
+            target = now + offset
+            index = int(np.searchsorted(times, target + 1e-8, side="right") - 1)
+            valid = target <= times[-1] + 1e-8 and frame < index < len(times)
+            result.append(
+                {
+                    "offset_seconds": offset,
+                    "frame": index if valid else None,
+                    "timestamp": float(times[index]) if valid else None,
+                }
+            )
+        return result
+
     def validate(self, decode=True):
         warnings = []
         seen = set()

@@ -238,14 +238,41 @@ def validate_schema(schema, previous=None):
 
     for key in graph:
         visit(key, [])
+    retired_fields = schema.get("retired_fields", {})
+    if set(fm) & set(retired_fields):
+        raise ValueError(
+            "已删除字段 key 不可复用: " + ", ".join(set(fm) & set(retired_fields))
+        )
+    for key, field in fm.items():
+        retired = {c["id"] for c in schema.get("retired_classes", {}).get(key, [])}
+        if retired & {c["id"] for c in field["classes"]}:
+            raise ValueError("已删除类别 ID 不可复用: " + key)
+        for ref in field.get("independent_when_missing", []):
+            if ref.split(".", 1)[-1] not in fm:
+                raise ValueError("不存在的独立审核引用: " + ref)
     if previous:
+        previous_retired = previous.get("retired_fields", {})
+        if set(fm) & set(previous_retired):
+            raise ValueError("已删除字段 key 不可复用")
         for key, old in field_map(previous).items():
             if key not in fm:
-                raise ValueError("请废弃字段而非删除: " + key)
+                blockers = deletion_blockers(schema, key)
+                if blockers:
+                    raise ValueError("不能删除 " + key + ": " + "；".join(blockers))
+                continue
             nc = {c["id"]: c for c in fm[key]["classes"]}
+            retired_ids = {
+                c["id"] for c in previous.get("retired_classes", {}).get(key, [])
+            }
+            if retired_ids & set(nc):
+                raise ValueError("已删除类别 ID 不可复用: " + key)
             for c in old["classes"]:
-                if c["id"] not in nc or nc[c["id"]]["key"] != c["key"]:
-                    raise ValueError("稳定类别 ID/key 不可删除或复用: " + key)
+                if c["id"] in nc and nc[c["id"]]["key"] != c["key"]:
+                    raise ValueError("稳定类别 ID/key 不可复用: " + key)
+                if c["id"] not in nc:
+                    blockers = deletion_blockers(schema, key, c["id"])
+                    if blockers:
+                        raise ValueError("不能删除类别: " + "；".join(blockers))
     return schema
 
 
@@ -274,7 +301,17 @@ def evaluate(rule, values, arm, schema):
 
 
 def resolve(schema, raw, center=True):
-    values = {a: {k: r["value_id"] for k, r in rs.items()} for a, rs in raw.items()}
+    fields = field_map(schema)
+    live_ids = {key: {c["id"] for c in f["classes"]} for key, f in fields.items()}
+    values = {
+        arm: {
+            key: record.get("value_id")
+            if record.get("value_id") in live_ids.get(key, set())
+            else None
+            for key, record in records.items()
+        }
+        for arm, records in raw.items()
+    }
     out = {}
     for arm in ["left", "right", "global"]:
         out[arm] = {}
@@ -283,6 +320,13 @@ def resolve(schema, raw, center=True):
                 continue
             key = f["field_id"]
             r = copy.deepcopy(raw.get(arm, {}).get(key, {}))
+            retired_value = (
+                r.get("value_id") is not None and r["value_id"] not in live_ids[key]
+            )
+            if retired_value:
+                r["retired_value_id"] = r["value_id"]
+                r["value_id"] = None
+                r["review_status"] = "needs_review"
             app = evaluate(f["applicable_when"], values, arm, schema)
             req = evaluate(f["required_when"], values, arm, schema)
             independent = f.get("independent_when_missing", [])
@@ -328,6 +372,11 @@ def resolve(schema, raw, center=True):
                 if app is None
                 else ""
             )
+            if retired_value:
+                r["reason"] = (
+                    f"原类别 {r['retired_value_id']} 已从当前版本删除；旧值保留在历史中，需重新标注"
+                    + ("；" + r["reason"] if r["reason"] else "")
+                )
             out[arm][key] = r
     return out
 
@@ -369,4 +418,129 @@ def head_spec(schema):
             for f in schema["fields"]
         ],
         "note": "新增类别需要对应模型分类头；稳定 ID 不是连续回归目标",
+    }
+
+
+def rule_leaves(rule):
+    if isinstance(rule, bool):
+        return []
+    if "field" in rule:
+        return [rule]
+    if "not" in rule:
+        return rule_leaves(rule["not"])
+    return [
+        leaf
+        for op in ["all", "any"]
+        for child in rule.get(op, [])
+        for leaf in rule_leaves(child)
+    ]
+
+
+def deletion_blockers(schema, field_id, class_id=None):
+    """References are checked against the proposed live schema, not historical versions."""
+    blockers = []
+    fields = field_map(schema)
+    if class_id is None and field_id == "phase":
+        blockers.append("phase 是帧游标、双臂阶段与导出的基础字段，不能删除")
+    for field in schema["fields"]:
+        if class_id is None and field["field_id"] == field_id:
+            continue  # References inside a removed field disappear with that field.
+        for condition in ["applicable_when", "required_when"]:
+            for leaf in rule_leaves(field[condition]):
+                if leaf["field"].split(".", 1)[1] != field_id:
+                    continue
+                values = (
+                    leaf.get("values", [])
+                    if leaf["op"] == "in"
+                    else [leaf.get("value")]
+                )
+                if class_id is None or class_id in values:
+                    blockers.append(
+                        f"{field['field_id']}.{condition} 引用 {leaf['field']}"
+                        + (f" 的类别 {class_id}" if class_id is not None else "")
+                    )
+        if class_id is None:
+            for ref in field.get("independent_when_missing", []):
+                if ref.split(".", 1)[1] == field_id:
+                    blockers.append(
+                        f"{field['field_id']}.independent_when_missing 引用 {ref}"
+                    )
+    field = fields.get(field_id)
+    if class_id is not None and field and field["unknown_id"] == class_id:
+        blockers.append(
+            f"{field_id}.unknown_id 仍引用类别 {class_id}；请先选择其他 unknown 类别"
+        )
+    release_ready = any(
+        c["id"] == 1 for c in fields.get("release_readiness", {}).get("classes", [])
+    )
+    if field_id == "holding" and release_ready and class_id in [None, 1]:
+        blockers.append(
+            "release_readiness 的 ready 一致性校验需要 holding 字段及其 1 · holding 类别"
+        )
+    if field_id == "phase" and class_id == 5 and release_ready:
+        blockers.append(
+            "release_readiness 的 ready 一致性校验需要 phase 的 5 · place_align 类别"
+        )
+    return list(dict.fromkeys(blockers))
+
+
+def prepare_schema(schema, previous):
+    """Retire removed identities permanently, while keeping old schemas/annotations intact."""
+    result = copy.deepcopy(schema)
+    retired_fields = {
+        **result.get("retired_fields", {}),
+        **copy.deepcopy(previous.get("retired_fields", {})),
+    }
+    retired_classes = copy.deepcopy(result.get("retired_classes", {}))
+    for key, classes in previous.get("retired_classes", {}).items():
+        merged = {c["id"]: c for c in retired_classes.get(key, [])}
+        merged.update({c["id"]: c for c in copy.deepcopy(classes)})
+        retired_classes[key] = list(merged.values())
+    current = field_map(result)
+    for key, field in field_map(previous).items():
+        if key not in current:
+            retired_fields[key] = copy.deepcopy(field)
+            continue
+        live_ids = {c["id"] for c in current[key]["classes"]}
+        removed = [c for c in field["classes"] if c["id"] not in live_ids]
+        if removed:
+            reserved = {c["id"]: c for c in retired_classes.get(key, [])}
+            reserved.update({c["id"]: copy.deepcopy(c) for c in removed})
+            retired_classes[key] = list(reserved.values())
+    if retired_fields:
+        result["retired_fields"] = retired_fields
+    if retired_classes:
+        result["retired_classes"] = retired_classes
+    return result
+
+
+def deletion_plan(schema, field_id, class_id=None):
+    current = field_map(schema)
+    if field_id not in current:
+        raise ValueError("待删除字段不存在")
+    if class_id is not None and class_id not in [
+        c["id"] for c in current[field_id]["classes"]
+    ]:
+        raise ValueError("待删除类别不存在")
+    blockers = deletion_blockers(schema, field_id, class_id)
+    if class_id is not None and len(current[field_id]["classes"]) <= 1:
+        blockers.append("字段必须保留至少一个类别")
+    candidate = copy.deepcopy(schema)
+    if not blockers:
+        if class_id is None:
+            candidate["fields"] = [
+                f for f in candidate["fields"] if f["field_id"] != field_id
+            ]
+        else:
+            field_map(candidate)[field_id]["classes"] = [
+                c for c in current[field_id]["classes"] if c["id"] != class_id
+            ]
+        candidate = prepare_schema(candidate, schema)
+        validate_schema(candidate, schema)
+    return {
+        "allowed": not blockers,
+        "blockers": blockers,
+        "schema_after": candidate if not blockers else None,
+        "field_id": field_id,
+        "class_id": class_id,
     }

@@ -13,6 +13,7 @@ from .schema import (
     resolve,
     field_map,
     semantic_errors,
+    prepare_schema,
 )
 
 
@@ -138,6 +139,10 @@ class Store:
     @contextlib.contextmanager
     def transaction(self, description):
         with self.lock:
+            if getattr(self._local, "transaction_depth", 0):
+                yield
+                return
+            self._local.transaction_depth = 1
             before = self.snapshot()
             try:
                 self.set("revision", self.get("revision", 0) + 1)
@@ -156,6 +161,8 @@ class Store:
             except Exception:
                 self.db.rollback()
                 raise
+            finally:
+                self._local.transaction_depth = 0
 
     def undo(self, redo=False):
         with self.lock:
@@ -256,6 +263,7 @@ class Store:
         preview=False,
         label_source="human",
         provenance=None,
+        _defer_review_validation=False,
     ):
         schema = self.schema()
         fm = field_map(schema)
@@ -407,7 +415,7 @@ class Store:
                                 + ")",
                                 tuple(r.values()),
                             )
-            if reviewed:
+            if reviewed and not _defer_review_validation:
                 for frame in eligible:
                     errors = [
                         e
@@ -417,6 +425,126 @@ class Store:
                     if errors:
                         raise ValueError("；".join(errors))
         return report
+
+    def annotate_batch(
+        self, changes, *, preview=False, expected_version=None, focus=None
+    ):
+        """Evaluate dependencies together; one transaction and one undo entry per batch."""
+        from .schema import references
+
+        with self.lock:
+            schema = self.schema()
+            if expected_version is not None and expected_version != schema["version"]:
+                raise ValueError("schema 已变更，请取消旧草稿并按当前版本重新填写")
+            fields = field_map(schema)
+            pending = list(enumerate(changes))
+            ordered = []
+            # Order phase/gates before their children, regardless of UI editing order.
+            while pending:
+                remaining_nodes = {(r["arm"], r["field"]) for _, r in pending}
+                ready = []
+                for index, change in pending:
+                    field = fields.get(change["field"])
+                    if field is None:
+                        raise ValueError("未知字段: " + change["field"])
+                    refs = [
+                        ref
+                        for key in ["applicable_when", "required_when"]
+                        for ref in references(field[key])
+                    ]
+                    deps = {
+                        (
+                            change["arm"]
+                            if ref.split(".", 1)[0] == "self"
+                            else ref.split(".", 1)[0],
+                            ref.split(".", 1)[1],
+                        )
+                        for ref in refs
+                    }
+                    if not deps & remaining_nodes:
+                        ready.append((index, change))
+                if not ready:
+                    raise ValueError("批量字段依赖无法排序")
+                ordered.extend(ready)
+                ready_indices = {i for i, _ in ready}
+                pending = [(i, r) for i, r in pending if i not in ready_indices]
+            original_focus = (
+                self.raw(focus["source"], focus["frame"]) if focus else None
+            )
+
+            def apply():
+                reports = []
+                for index, change in ordered:
+                    report = self.annotate(**change, _defer_review_validation=True)
+                    overrides = self.db.execute(
+                        "SELECT start,end FROM annotations WHERE source=? AND arm=? AND field=? AND kind='point' AND start<? AND end>?",
+                        (
+                            change["source"],
+                            change["arm"],
+                            change["field"],
+                            change["end"],
+                            change["start"],
+                        ),
+                    ).fetchall()
+                    report["point_overrides"] = (
+                        0
+                        if change.get("point")
+                        else sum(
+                            min(r["end"], change["end"])
+                            - max(r["start"], change["start"])
+                            for r in overrides
+                        )
+                    )
+                    reports.append({"index": index, **report})
+                for change in changes:
+                    if change.get("reviewed"):
+                        for frame in range(change["start"], change["end"]):
+                            errors = [
+                                e
+                                for e in semantic_errors(
+                                    self.labels(change["source"], frame)
+                                )
+                                if "缺少必填" not in e
+                                and e.startswith(change["arm"] + ":")
+                            ]
+                            if errors:
+                                raise ValueError("；".join(errors))
+                result = {
+                    "reports": sorted(reports, key=lambda r: r["index"]),
+                    "saved": not preview,
+                }
+                if focus:
+                    result["labels"] = self.labels(
+                        focus["source"], focus["frame"], focus.get("center", True)
+                    )
+                    # The form shows assignment targets; preserved point overrides are
+                    # reported separately rather than disguising them as range values.
+                    planned = copy.deepcopy(original_focus)
+                    for _, change in ordered:
+                        if (
+                            change["source"] == focus["source"]
+                            and change["start"] <= focus["frame"] < change["end"]
+                        ):
+                            planned[change["arm"]][change["field"]] = {
+                                "value_id": change["value"],
+                                "review_status": "draft",
+                                "schema_version": schema["version"],
+                            }
+                    result["form_labels"] = resolve(schema, planned, False)
+                return result
+
+            if preview:
+                self.db.execute("SAVEPOINT batch_preview")
+                previous_depth = getattr(self._local, "transaction_depth", 0)
+                self._local.transaction_depth = 1
+                try:
+                    return apply()
+                finally:
+                    self.db.execute("ROLLBACK TO batch_preview")
+                    self.db.execute("RELEASE batch_preview")
+                    self._local.transaction_depth = previous_depth
+            with self.transaction(f"整组标注 · {len(changes)} 项"):
+                return apply()
 
     def select(self, dataset, episode, start, end, remove=False):
         with self.transaction("训练中心选区"):
@@ -453,11 +581,12 @@ class Store:
 
     def publish(self, schema, preview=False):
         old = self.schema()
+        schema = prepare_schema(schema, old)
         validate_schema(schema, old)
         changed = [
             key
-            for key in field_map(schema)
-            if field_map(old).get(key) != field_map(schema)[key]
+            for key in field_map(schema).keys() | field_map(old).keys()
+            if field_map(old).get(key) != field_map(schema).get(key)
         ]
         report = {
             "changed_fields": changed,

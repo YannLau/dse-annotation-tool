@@ -978,3 +978,118 @@ nav button {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.future-reference {
+  margin: 0 0 20px;
+  padding: 14px;
+  border: 1px solid #66523a;
+  border-radius: 8px;
+  background: #211e18;
+}
+.future-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.future-heading h3 {
+  color: #f5c98a;
+  margin: 0;
+}
+.future-heading label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  margin: 0;
+}
+.future-heading label select {
+  width: 90px;
+  margin: 0;
+}
+.future-reference p {
+  font-size: 11px;
+  margin: 9px 0 14px;
+}
+.future-grid {
+  display: grid;
+  grid-template-columns: 55px repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  align-items: center;
+}
+.future-grid .history-cell {
+  max-height: 150px;
+}
+.draft-change {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  align-items: center;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.draft-change button {
+  flex-shrink: 0;
+  padding: 1px 6px;
+}
+.schema-field-heading {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.schema-field-heading h2 {
+  margin-right: auto;
+}
+.danger {
+  border-color: #8c5351;
+  color: #ffb5a9;
+  background: #362324;
+}
+.danger:hover {
+  background: #57302d;
+}
+.schema-delete-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  background: #030914d9;
+  display: grid;
+  place-items: center;
+  padding: 25px;
+}
+.schema-delete-dialog {
+  max-width: 650px;
+  width: 100%;
+  max-height: 90vh;
+  overflow: auto;
+  border: 1px solid #8c6660;
+  background: #142131;
+  border-radius: 10px;
+  padding: 25px;
+  box-shadow: 0 15px 80px #0009;
+}
+.schema-delete-dialog li {
+  line-height: 1.8;
+  color: #f0c5b0;
+  overflow-wrap: anywhere;
+}
+.class-row > input {
+  min-width: 0;
+}
+.class-row button {
+  white-space: nowrap;
+}
+@media (max-width: 750px) {
+  .future-grid {
+    grid-template-columns: 35px repeat(3, minmax(0, 1fr));
+  }
+  .future-heading {
+    flex-wrap: wrap;
+  }
+  .future-grid .history-time small {
+    font-size: 8px;
+  }
+  .class-row {
+    flex-wrap: wrap;
+  }
+}

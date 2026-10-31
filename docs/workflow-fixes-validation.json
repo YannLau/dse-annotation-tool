@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-31",
+  "tests_passed": 26,
+  "source_fingerprint_unchanged": true,
+  "source_fingerprint": "ee5011e1baece32d12286f19e25ca9b9ed69c2470f3245e0621ad6a77f91d9d9",
+  "browser_batch": {
+    "staged_fields": 6,
+    "formal_records_before_confirmation": 0,
+    "sqlite_staged_fields_before_confirmation": 6,
+    "restored_on_reload": true,
+    "single_commit_undo_redo": true
+  },
+  "browser_future": {
+    "decision_frame": 150,
+    "future_frames": [
+      153,
+      156,
+      157
+    ],
+    "timestamps": [
+      5.1,
+      5.2,
+      5.233333333333333
+    ],
+    "decision_preserved_when_horizon_changed": true,
+    "hidden_in_state_mode": true
+  },
+  "browser_deletion": {
+    "dependent_phase_blocked": true,
+    "deleted_class_id": 1,
+    "next_generated_class_id": 4,
+    "removed_field": "adviser.y",
+    "retired_value_displayed_missing": true,
+    "undo_preserves_other_edits": true
+  },
+  "qa_history_entries": [
+    [
+      1,
+      "整组标注 · 6 项"
+    ],
+    [
+      2,
+      "整组标注 · 4 项"
+    ],
+    [
+      3,
+      "整组标注 · 4 项"
+    ]
+  ]
+}
