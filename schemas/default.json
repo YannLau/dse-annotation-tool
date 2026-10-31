@@ -1,0 +1,451 @@
+{
+  "version": 1,
+  "fields": [
+    {
+      "field_id": "phase",
+      "label": "phase",
+      "description": "左右臂独立判断；静止不自动等于 idle；证据不足允许 unknown。",
+      "scope": "each_arm",
+      "type": "categorical",
+      "classes": [
+        {
+          "id": 0,
+          "key": "idle",
+          "label_zh": "空闲",
+          "color": "#718096",
+          "shortcut": ""
+        },
+        {
+          "id": 1,
+          "key": "approach",
+          "label_zh": "接近",
+          "color": "#60a5fa",
+          "shortcut": ""
+        },
+        {
+          "id": 2,
+          "key": "grasp_align",
+          "label_zh": "抓取对准",
+          "color": "#34d399",
+          "shortcut": ""
+        },
+        {
+          "id": 3,
+          "key": "grasp_check",
+          "label_zh": "抓持检查",
+          "color": "#fbbf24",
+          "shortcut": ""
+        },
+        {
+          "id": 4,
+          "key": "transport",
+          "label_zh": "搬运",
+          "color": "#c084fc",
+          "shortcut": ""
+        },
+        {
+          "id": 5,
+          "key": "place_align",
+          "label_zh": "放置对准",
+          "color": "#fb923c",
+          "shortcut": ""
+        },
+        {
+          "id": 6,
+          "key": "withdraw",
+          "label_zh": "撤离",
+          "color": "#22d3ee",
+          "shortcut": ""
+        },
+        {
+          "id": 7,
+          "key": "recover",
+          "label_zh": "恢复重试",
+          "color": "#f87171",
+          "shortcut": ""
+        },
+        {
+          "id": 8,
+          "key": "unknown",
+          "label_zh": "无法判断",
+          "color": "#94a3b8",
+          "shortcut": ""
+        }
+      ],
+      "unknown_id": 8,
+      "applicable_when": true,
+      "required_when": true,
+      "evidence": "state"
+    },
+    {
+      "field_id": "holding",
+      "label": "holding",
+      "description": "针对指定目标，需要可见夹持关系或共同运动；不能只看夹爪开合。",
+      "scope": "each_arm",
+      "type": "categorical",
+      "classes": [
+        {
+          "id": 0,
+          "key": "empty",
+          "label_zh": "空手",
+          "color": "#718096",
+          "shortcut": ""
+        },
+        {
+          "id": 1,
+          "key": "holding",
+          "label_zh": "持物",
+          "color": "#60a5fa",
+          "shortcut": ""
+        },
+        {
+          "id": 2,
+          "key": "unknown",
+          "label_zh": "无法判断",
+          "color": "#34d399",
+          "shortcut": ""
+        }
+      ],
+      "unknown_id": 2,
+      "applicable_when": {
+        "field": "self.phase",
+        "op": "in",
+        "values": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      "required_when": {
+        "field": "self.phase",
+        "op": "in",
+        "values": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      "evidence": "state",
+      "independent_when_missing": [
+        "self.phase"
+      ]
+    },
+    {
+      "field_id": "close_readiness",
+      "label": "close_readiness",
+      "description": "保持当前 TCP 现在闭合：检查目标位置、夹指高度/朝向/开口、闭合路径和运动条件。",
+      "scope": "each_arm",
+      "type": "categorical",
+      "classes": [
+        {
+          "id": 0,
+          "key": "not_ready",
+          "label_zh": "条件不具备",
+          "color": "#718096",
+          "shortcut": ""
+        },
+        {
+          "id": 1,
+          "key": "ready",
+          "label_zh": "条件具备",
+          "color": "#60a5fa",
+          "shortcut": ""
+        },
+        {
+          "id": 2,
+          "key": "unknown",
+          "label_zh": "无法判断",
+          "color": "#34d399",
+          "shortcut": ""
+        }
+      ],
+      "unknown_id": 2,
+      "applicable_when": {
+        "field": "self.phase",
+        "op": "in",
+        "values": [
+          2
+        ]
+      },
+      "required_when": {
+        "field": "self.phase",
+        "op": "in",
+        "values": [
+          2
+        ]
+      },
+      "evidence": "state"
+    },
+    {
+      "field_id": "release_readiness",
+      "label": "release_readiness",
+      "description": "保持当前 TCP 打开：检查承接位置、支撑、运动与脱离阻碍；ready 仅限 place_align 且 holding。",
+      "scope": "each_arm",
+      "type": "categorical",
+      "classes": [
+        {
+          "id": 0,
+          "key": "not_ready",
+          "label_zh": "条件不具备",
+          "color": "#718096",
+          "shortcut": ""
+        },
+        {
+          "id": 1,
+          "key": "ready",
+          "label_zh": "条件具备",
+          "color": "#60a5fa",
+          "shortcut": ""
+        },
+        {
+          "id": 2,
+          "key": "unknown",
+          "label_zh": "无法判断",
+          "color": "#34d399",
+          "shortcut": ""
+        }
+      ],
+      "unknown_id": 2,
+      "applicable_when": {
+        "field": "self.phase",
+        "op": "in",
+        "values": [
+          4,
+          5
+        ]
+      },
+      "required_when": {
+        "field": "self.phase",
+        "op": "in",
+        "values": [
+          4,
+          5
+        ]
+      },
+      "evidence": "state"
+    },
+    {
+      "field_id": "adviser.x",
+      "label": "adviser.x",
+      "description": "规范基座系 +X前、+Y机器人左、+Z上；仅复核示教短窗口运动，none/keep 不代表对准。",
+      "scope": "each_arm",
+      "type": "categorical",
+      "classes": [
+        {
+          "id": 0,
+          "key": "none",
+          "label_zh": "无显著位移",
+          "color": "#718096",
+          "shortcut": ""
+        },
+        {
+          "id": 1,
+          "key": "positive",
+          "label_zh": "正方向",
+          "color": "#60a5fa",
+          "shortcut": ""
+        },
+        {
+          "id": 2,
+          "key": "negative",
+          "label_zh": "负方向",
+          "color": "#34d399",
+          "shortcut": ""
+        },
+        {
+          "id": 3,
+          "key": "unknown",
+          "label_zh": "无法判断",
+          "color": "#fbbf24",
+          "shortcut": ""
+        }
+      ],
+      "unknown_id": 3,
+      "applicable_when": {
+        "field": "self.phase",
+        "op": "in",
+        "values": [
+          2,
+          5
+        ]
+      },
+      "required_when": {
+        "field": "self.phase",
+        "op": "in",
+        "values": [
+          2,
+          5
+        ]
+      },
+      "evidence": "behavior"
+    },
+    {
+      "field_id": "adviser.y",
+      "label": "adviser.y",
+      "description": "规范基座系 +X前、+Y机器人左、+Z上；仅复核示教短窗口运动，none/keep 不代表对准。",
+      "scope": "each_arm",
+      "type": "categorical",
+      "classes": [
+        {
+          "id": 0,
+          "key": "none",
+          "label_zh": "无显著位移",
+          "color": "#718096",
+          "shortcut": ""
+        },
+        {
+          "id": 1,
+          "key": "positive",
+          "label_zh": "正方向",
+          "color": "#60a5fa",
+          "shortcut": ""
+        },
+        {
+          "id": 2,
+          "key": "negative",
+          "label_zh": "负方向",
+          "color": "#34d399",
+          "shortcut": ""
+        },
+        {
+          "id": 3,
+          "key": "unknown",
+          "label_zh": "无法判断",
+          "color": "#fbbf24",
+          "shortcut": ""
+        }
+      ],
+      "unknown_id": 3,
+      "applicable_when": {
+        "field": "self.phase",
+        "op": "in",
+        "values": [
+          2,
+          5
+        ]
+      },
+      "required_when": {
+        "field": "self.phase",
+        "op": "in",
+        "values": [
+          2,
+          5
+        ]
+      },
+      "evidence": "behavior"
+    },
+    {
+      "field_id": "adviser.z",
+      "label": "adviser.z",
+      "description": "规范基座系 +X前、+Y机器人左、+Z上；仅复核示教短窗口运动，none/keep 不代表对准。",
+      "scope": "each_arm",
+      "type": "categorical",
+      "classes": [
+        {
+          "id": 0,
+          "key": "none",
+          "label_zh": "无显著位移",
+          "color": "#718096",
+          "shortcut": ""
+        },
+        {
+          "id": 1,
+          "key": "positive",
+          "label_zh": "正方向",
+          "color": "#60a5fa",
+          "shortcut": ""
+        },
+        {
+          "id": 2,
+          "key": "negative",
+          "label_zh": "负方向",
+          "color": "#34d399",
+          "shortcut": ""
+        },
+        {
+          "id": 3,
+          "key": "unknown",
+          "label_zh": "无法判断",
+          "color": "#fbbf24",
+          "shortcut": ""
+        }
+      ],
+      "unknown_id": 3,
+      "applicable_when": {
+        "field": "self.phase",
+        "op": "in",
+        "values": [
+          2,
+          5
+        ]
+      },
+      "required_when": {
+        "field": "self.phase",
+        "op": "in",
+        "values": [
+          2,
+          5
+        ]
+      },
+      "evidence": "behavior"
+    },
+    {
+      "field_id": "adviser.orientation",
+      "label": "adviser.orientation",
+      "description": "规范基座系 +X前、+Y机器人左、+Z上；仅复核示教短窗口运动，none/keep 不代表对准。",
+      "scope": "each_arm",
+      "type": "categorical",
+      "classes": [
+        {
+          "id": 0,
+          "key": "keep",
+          "label_zh": "无显著调整",
+          "color": "#718096",
+          "shortcut": ""
+        },
+        {
+          "id": 1,
+          "key": "adjust",
+          "label_zh": "调整姿态",
+          "color": "#60a5fa",
+          "shortcut": ""
+        },
+        {
+          "id": 2,
+          "key": "unknown",
+          "label_zh": "无法判断",
+          "color": "#34d399",
+          "shortcut": ""
+        }
+      ],
+      "unknown_id": 2,
+      "applicable_when": {
+        "field": "self.phase",
+        "op": "in",
+        "values": [
+          2,
+          5
+        ]
+      },
+      "required_when": {
+        "field": "self.phase",
+        "op": "in",
+        "values": [
+          2,
+          5
+        ]
+      },
+      "evidence": "behavior"
+    }
+  ]
+}

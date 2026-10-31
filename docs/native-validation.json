@@ -1,0 +1,146 @@
+{
+  "loader": "lerobot.datasets.lerobot_dataset.LeRobotDataset",
+  "lerobot_version": "0.3.3",
+  "dataset_version": "v2.1",
+  "torch_version": "2.7.1+cpu",
+  "datasets_version": "3.6.0",
+  "video_backend": "pyav",
+  "root": "/home/punk/yann_repo/paper_code_01/dse_annotation_tool/exports/real-acceptance-final-moved",
+  "rows": 105,
+  "episodes": 2,
+  "checked_rows": [
+    {
+      "index": 0,
+      "features": {
+        "observation.images.cam_high": [
+          3,
+          480,
+          640
+        ],
+        "observation.images.cam_right_wrist": [
+          3,
+          480,
+          640
+        ],
+        "observation.images.cam_left_wrist": [
+          3,
+          480,
+          640
+        ],
+        "observation.state": [
+          18
+        ],
+        "action": [
+          18
+        ],
+        "observation.ee_pose_left": [
+          7
+        ],
+        "observation.ee_pose_right": [
+          7
+        ],
+        "observation.ee_pose_cmd_left": [
+          7
+        ],
+        "observation.ee_pose_cmd_right": [
+          7
+        ],
+        "frame_index": [],
+        "timestamp": [],
+        "episode_index": [],
+        "index": [],
+        "task_index": [],
+        "task": "Put the banana on the plate."
+      }
+    },
+    {
+      "index": 52,
+      "features": {
+        "observation.images.cam_high": [
+          3,
+          480,
+          640
+        ],
+        "observation.images.cam_right_wrist": [
+          3,
+          480,
+          640
+        ],
+        "observation.images.cam_left_wrist": [
+          3,
+          480,
+          640
+        ],
+        "observation.state": [
+          18
+        ],
+        "action": [
+          18
+        ],
+        "observation.ee_pose_left": [
+          7
+        ],
+        "observation.ee_pose_right": [
+          7
+        ],
+        "observation.ee_pose_cmd_left": [
+          7
+        ],
+        "observation.ee_pose_cmd_right": [
+          7
+        ],
+        "frame_index": [],
+        "timestamp": [],
+        "episode_index": [],
+        "index": [],
+        "task_index": [],
+        "task": "Put the banana on the plate."
+      }
+    },
+    {
+      "index": 104,
+      "features": {
+        "observation.images.cam_high": [
+          3,
+          480,
+          640
+        ],
+        "observation.images.cam_right_wrist": [
+          3,
+          480,
+          640
+        ],
+        "observation.images.cam_left_wrist": [
+          3,
+          480,
+          640
+        ],
+        "observation.state": [
+          18
+        ],
+        "action": [
+          18
+        ],
+        "observation.ee_pose_left": [
+          7
+        ],
+        "observation.ee_pose_right": [
+          7
+        ],
+        "observation.ee_pose_cmd_left": [
+          7
+        ],
+        "observation.ee_pose_cmd_right": [
+          7
+        ],
+        "frame_index": [],
+        "timestamp": [],
+        "episode_index": [],
+        "index": [],
+        "task_index": [],
+        "task": "Put the banana on the plate."
+      }
+    }
+  ],
+  "offline": true
+}

@@ -1,0 +1,848 @@
+{
+  "hardware": {
+    "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
+    "cpu": "Intel(R) Core(TM) Ultra 7 270K Plus",
+    "logical_cores": 24
+  },
+  "source": "/home/punk/yann_repo/paper_code_01/tron2_dataset/lerobot_v2.1_examples",
+  "fingerprint_before": "ee5011e1baece32d12286f19e25ca9b9ed69c2470f3245e0621ad6a77f91d9d9",
+  "import_seconds": 2.5627277299645357,
+  "frames": 13432,
+  "physical_type_warnings": [
+    {
+      "episode": 0,
+      "field": "observation.state",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 0,
+      "field": "action",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 0,
+      "field": "observation.ee_pose_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 0,
+      "field": "observation.ee_pose_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 0,
+      "field": "observation.ee_pose_cmd_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 0,
+      "field": "observation.ee_pose_cmd_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 0,
+      "field": "timestamp",
+      "declared": "float32",
+      "physical": "double"
+    },
+    {
+      "episode": 1,
+      "field": "observation.state",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 1,
+      "field": "action",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 1,
+      "field": "observation.ee_pose_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 1,
+      "field": "observation.ee_pose_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 1,
+      "field": "observation.ee_pose_cmd_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 1,
+      "field": "observation.ee_pose_cmd_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 1,
+      "field": "timestamp",
+      "declared": "float32",
+      "physical": "double"
+    },
+    {
+      "episode": 2,
+      "field": "observation.state",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 2,
+      "field": "action",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 2,
+      "field": "observation.ee_pose_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 2,
+      "field": "observation.ee_pose_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 2,
+      "field": "observation.ee_pose_cmd_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 2,
+      "field": "observation.ee_pose_cmd_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 2,
+      "field": "timestamp",
+      "declared": "float32",
+      "physical": "double"
+    },
+    {
+      "episode": 3,
+      "field": "observation.state",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 3,
+      "field": "action",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 3,
+      "field": "observation.ee_pose_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 3,
+      "field": "observation.ee_pose_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 3,
+      "field": "observation.ee_pose_cmd_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 3,
+      "field": "observation.ee_pose_cmd_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 3,
+      "field": "timestamp",
+      "declared": "float32",
+      "physical": "double"
+    },
+    {
+      "episode": 4,
+      "field": "observation.state",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 4,
+      "field": "action",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 4,
+      "field": "observation.ee_pose_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 4,
+      "field": "observation.ee_pose_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 4,
+      "field": "observation.ee_pose_cmd_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 4,
+      "field": "observation.ee_pose_cmd_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 4,
+      "field": "timestamp",
+      "declared": "float32",
+      "physical": "double"
+    },
+    {
+      "episode": 5,
+      "field": "observation.state",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 5,
+      "field": "action",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 5,
+      "field": "observation.ee_pose_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 5,
+      "field": "observation.ee_pose_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 5,
+      "field": "observation.ee_pose_cmd_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 5,
+      "field": "observation.ee_pose_cmd_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 5,
+      "field": "timestamp",
+      "declared": "float32",
+      "physical": "double"
+    },
+    {
+      "episode": 6,
+      "field": "observation.state",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 6,
+      "field": "action",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 6,
+      "field": "observation.ee_pose_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 6,
+      "field": "observation.ee_pose_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 6,
+      "field": "observation.ee_pose_cmd_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 6,
+      "field": "observation.ee_pose_cmd_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 6,
+      "field": "timestamp",
+      "declared": "float32",
+      "physical": "double"
+    },
+    {
+      "episode": 7,
+      "field": "observation.state",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 7,
+      "field": "action",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 7,
+      "field": "observation.ee_pose_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 7,
+      "field": "observation.ee_pose_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 7,
+      "field": "observation.ee_pose_cmd_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 7,
+      "field": "observation.ee_pose_cmd_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 7,
+      "field": "timestamp",
+      "declared": "float32",
+      "physical": "double"
+    },
+    {
+      "episode": 8,
+      "field": "observation.state",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 8,
+      "field": "action",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 8,
+      "field": "observation.ee_pose_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 8,
+      "field": "observation.ee_pose_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 8,
+      "field": "observation.ee_pose_cmd_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 8,
+      "field": "observation.ee_pose_cmd_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 8,
+      "field": "timestamp",
+      "declared": "float32",
+      "physical": "double"
+    },
+    {
+      "episode": 9,
+      "field": "observation.state",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 9,
+      "field": "action",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 9,
+      "field": "observation.ee_pose_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 9,
+      "field": "observation.ee_pose_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 9,
+      "field": "observation.ee_pose_cmd_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 9,
+      "field": "observation.ee_pose_cmd_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 9,
+      "field": "timestamp",
+      "declared": "float32",
+      "physical": "double"
+    },
+    {
+      "episode": 10,
+      "field": "observation.state",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 10,
+      "field": "action",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 10,
+      "field": "observation.ee_pose_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 10,
+      "field": "observation.ee_pose_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 10,
+      "field": "observation.ee_pose_cmd_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 10,
+      "field": "observation.ee_pose_cmd_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 10,
+      "field": "timestamp",
+      "declared": "float32",
+      "physical": "double"
+    },
+    {
+      "episode": 11,
+      "field": "observation.state",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 11,
+      "field": "action",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 11,
+      "field": "observation.ee_pose_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 11,
+      "field": "observation.ee_pose_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 11,
+      "field": "observation.ee_pose_cmd_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 11,
+      "field": "observation.ee_pose_cmd_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 11,
+      "field": "timestamp",
+      "declared": "float32",
+      "physical": "double"
+    },
+    {
+      "episode": 12,
+      "field": "observation.state",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 12,
+      "field": "action",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 12,
+      "field": "observation.ee_pose_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 12,
+      "field": "observation.ee_pose_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 12,
+      "field": "observation.ee_pose_cmd_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 12,
+      "field": "observation.ee_pose_cmd_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 12,
+      "field": "timestamp",
+      "declared": "float32",
+      "physical": "double"
+    },
+    {
+      "episode": 13,
+      "field": "observation.state",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 13,
+      "field": "action",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 13,
+      "field": "observation.ee_pose_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 13,
+      "field": "observation.ee_pose_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 13,
+      "field": "observation.ee_pose_cmd_left",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 13,
+      "field": "observation.ee_pose_cmd_right",
+      "declared": "float32",
+      "physical": "list<element: double>"
+    },
+    {
+      "episode": 13,
+      "field": "timestamp",
+      "declared": "float32",
+      "physical": "double"
+    }
+  ],
+  "episode_lengths": [
+    299,
+    490,
+    591,
+    1070,
+    912,
+    784,
+    944,
+    693,
+    944,
+    732,
+    1725,
+    1084,
+    1039,
+    2125
+  ],
+  "all_episodes_opened": true,
+  "history_at_5_seconds": [
+    {
+      "frame": 132,
+      "timestamp": 4.4
+    },
+    {
+      "frame": 138,
+      "timestamp": 4.6
+    },
+    {
+      "frame": 144,
+      "timestamp": 4.8
+    },
+    {
+      "frame": 150,
+      "timestamp": 5.0
+    }
+  ],
+  "cache_definition": "应用 JPEG 缓存冷/热；OS 页缓存未清空；import 为新工作项目完整校验",
+  "panel_cold_seconds": 0.11166277003940195,
+  "panel_hot_seconds": 0.019624812994152308,
+  "single_seek_cold_seconds": 0.007812669035047293,
+  "single_seek_hot_seconds": 0.001920834998600185,
+  "export": {
+    "id": "92d3dfdf-01dc-4d3d-846d-4a883b3d698f",
+    "status": "complete",
+    "progress": 1,
+    "destination": "/home/punk/yann_repo/paper_code_01/dse_annotation_tool/exports/real-acceptance-final",
+    "started": 1793414804.9842656,
+    "error": null,
+    "elapsed_seconds": 4.47459830599837,
+    "summary": {
+      "complete": 0,
+      "partial": 0,
+      "no_supervision": 55,
+      "missing_fields": 110,
+      "center_count": 55,
+      "context_count": 50,
+      "counts": {
+        "left.phase:missing": 55,
+        "left.holding:missing": 55,
+        "left.close_readiness:missing": 55,
+        "left.release_readiness:missing": 55,
+        "left.adviser.x:missing": 55,
+        "left.adviser.y:missing": 55,
+        "left.adviser.z:missing": 55,
+        "left.adviser.orientation:missing": 55,
+        "right.phase:missing": 55,
+        "right.holding:missing": 55,
+        "right.close_readiness:missing": 55,
+        "right.release_readiness:missing": 55,
+        "right.adviser.x:missing": 55,
+        "right.adviser.y:missing": 55,
+        "right.adviser.z:missing": 55,
+        "right.adviser.orientation:missing": 55
+      },
+      "warnings": [
+        "无可用 key 采样池",
+        "无可用 background 采样池"
+      ],
+      "segments": [
+        {
+          "source_episode": 0,
+          "center": [
+            150,
+            180
+          ],
+          "retained": [
+            132,
+            187
+          ],
+          "new_episode": 0
+        },
+        {
+          "source_episode": 0,
+          "center": [
+            220,
+            245
+          ],
+          "retained": [
+            202,
+            252
+          ],
+          "new_episode": 1
+        }
+      ],
+      "elapsed_seconds": 3.999066790973302
+    }
+  },
+  "media_comparisons": [
+    {
+      "episode": 0,
+      "frame": 0,
+      "camera": "observation.images.cam_high",
+      "source_frame": 132,
+      "mean_absolute_pixel_error": 1.2762315538194444
+    },
+    {
+      "episode": 0,
+      "frame": 0,
+      "camera": "observation.images.cam_left_wrist",
+      "source_frame": 132,
+      "mean_absolute_pixel_error": 1.0617241753472222
+    },
+    {
+      "episode": 0,
+      "frame": 0,
+      "camera": "observation.images.cam_right_wrist",
+      "source_frame": 132,
+      "mean_absolute_pixel_error": 0.8910091145833333
+    },
+    {
+      "episode": 0,
+      "frame": 27,
+      "camera": "observation.images.cam_high",
+      "source_frame": 159,
+      "mean_absolute_pixel_error": 1.0205837673611111
+    },
+    {
+      "episode": 0,
+      "frame": 27,
+      "camera": "observation.images.cam_left_wrist",
+      "source_frame": 159,
+      "mean_absolute_pixel_error": 0.8452680121527778
+    },
+    {
+      "episode": 0,
+      "frame": 27,
+      "camera": "observation.images.cam_right_wrist",
+      "source_frame": 159,
+      "mean_absolute_pixel_error": 0.7139474826388889
+    },
+    {
+      "episode": 0,
+      "frame": 54,
+      "camera": "observation.images.cam_high",
+      "source_frame": 186,
+      "mean_absolute_pixel_error": 1.7632996961805556
+    },
+    {
+      "episode": 0,
+      "frame": 54,
+      "camera": "observation.images.cam_left_wrist",
+      "source_frame": 186,
+      "mean_absolute_pixel_error": 1.410390625
+    },
+    {
+      "episode": 0,
+      "frame": 54,
+      "camera": "observation.images.cam_right_wrist",
+      "source_frame": 186,
+      "mean_absolute_pixel_error": 1.178095703125
+    },
+    {
+      "episode": 1,
+      "frame": 0,
+      "camera": "observation.images.cam_high",
+      "source_frame": 202,
+      "mean_absolute_pixel_error": 1.27912109375
+    },
+    {
+      "episode": 1,
+      "frame": 0,
+      "camera": "observation.images.cam_left_wrist",
+      "source_frame": 202,
+      "mean_absolute_pixel_error": 1.0401529947916666
+    },
+    {
+      "episode": 1,
+      "frame": 0,
+      "camera": "observation.images.cam_right_wrist",
+      "source_frame": 202,
+      "mean_absolute_pixel_error": 0.8875575086805556
+    },
+    {
+      "episode": 1,
+      "frame": 25,
+      "camera": "observation.images.cam_high",
+      "source_frame": 227,
+      "mean_absolute_pixel_error": 1.0334906684027778
+    },
+    {
+      "episode": 1,
+      "frame": 25,
+      "camera": "observation.images.cam_left_wrist",
+      "source_frame": 227,
+      "mean_absolute_pixel_error": 0.8481705729166666
+    },
+    {
+      "episode": 1,
+      "frame": 25,
+      "camera": "observation.images.cam_right_wrist",
+      "source_frame": 227,
+      "mean_absolute_pixel_error": 0.7181217447916667
+    },
+    {
+      "episode": 1,
+      "frame": 49,
+      "camera": "observation.images.cam_high",
+      "source_frame": 251,
+      "mean_absolute_pixel_error": 1.5118500434027777
+    },
+    {
+      "episode": 1,
+      "frame": 49,
+      "camera": "observation.images.cam_left_wrist",
+      "source_frame": 251,
+      "mean_absolute_pixel_error": 1.2133289930555555
+    },
+    {
+      "episode": 1,
+      "frame": 49,
+      "camera": "observation.images.cam_right_wrist",
+      "source_frame": 251,
+      "mean_absolute_pixel_error": 1.0021538628472222
+    }
+  ],
+  "batch_images_shape": [
+    2,
+    4,
+    3,
+    3,
+    256,
+    256
+  ],
+  "semantic_labels": "所有真实标签保持 missing；无伪造的人工审核真值。unknown/mask 测试使用合成夹具。",
+  "portable_reimport": true,
+  "fingerprint_after": "ee5011e1baece32d12286f19e25ca9b9ed69c2470f3245e0621ad6a77f91d9d9",
+  "peak_rss_mib": 486.453125,
+  "total_seconds": 9.760424993990455
+}
