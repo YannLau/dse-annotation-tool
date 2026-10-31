@@ -8,3 +8,5 @@ exports/
 *.egg-info/
 .validation/
 *.tsbuildinfo
+.DS_Store
+datasets/
