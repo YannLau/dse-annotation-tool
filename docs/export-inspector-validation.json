@@ -1,0 +1,43 @@
+{
+  "tests": 33,
+  "source": "合成夹具与真实独立导出分别验收，未给真实数据伪造标签",
+  "demo": "/home/punk/yann_repo/paper_code_01/dse_annotation_tool/workspaces/inspector-overlap-demo/synthetic-overlap-export",
+  "demo_total_rows": 58,
+  "demo_center_rows": 8,
+  "demo_unique_source_frames": 39,
+  "demo_duplicate_extra_rows": 19,
+  "demo_source_frame_20": [
+    {
+      "episode": 0,
+      "frame": 18,
+      "source_frame": 20,
+      "role": "center",
+      "value_id": 8,
+      "review_status": "reviewed",
+      "effective_loss_mask": 1
+    },
+    {
+      "episode": 1,
+      "frame": 8,
+      "source_frame": 20,
+      "role": "history",
+      "value_id": 8,
+      "review_status": "reviewed",
+      "effective_loss_mask": 0
+    }
+  ],
+  "real_export": "/home/punk/yann_repo/paper_code_01/dse_annotation_tool/exports/real-history-20261031-moved",
+  "real_export_hash_before": "fa9d84c3c17e6dac6fa41df1b56c94fc1893df3098b1751ebf850a1086f93e9a",
+  "real_export_hash_after": "fa9d84c3c17e6dac6fa41df1b56c94fc1893df3098b1751ebf850a1086f93e9a",
+  "browser_checks": [
+    "color-coded source timelines",
+    "same source frame: center mask1 and prefix mask0",
+    "null label target -100",
+    "raw observation.state retained",
+    "source mapping",
+    "training history: real source40/115/190",
+    "video magnification",
+    "file JSON/Parquet preview",
+    "independent read-only inspection; no source import/schema migration"
+  ]
+}

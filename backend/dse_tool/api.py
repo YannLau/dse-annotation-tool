@@ -29,6 +29,9 @@ from .schema import (
 )
 from .assist import event_candidates, adviser_candidate
 from .history import HistoryConfig
+from .inspector import ExportInspector, clean
+from .review import review_labels
+import uuid
 
 
 class HistorySettings(BaseModel):
@@ -75,6 +78,19 @@ class BatchAnnotationRequest(BaseModel):
     focus: AnnotationFocus | None = None
 
 
+class LabelReviewRequest(BaseModel):
+    dataset: str
+    episode: int
+    start: int = Field(ge=0)
+    end: int = Field(gt=0)
+    mode: Literal["state", "behavior"]
+    confirmed: bool = False
+    preview: bool = False
+    expected_schema_version: int = Field(ge=1)
+    expected_revision: int | None = Field(default=None, ge=0)
+    history_config: HistorySettings = Field(default_factory=HistorySettings)
+
+
 class SelectionRequest(BaseModel):
     dataset: str
     episode: int
@@ -117,6 +133,7 @@ def create_app(work_root):
         logger.addHandler(handler)
     exporter = Exporter(store)
     datasets = {}
+    inspectors = {}
     media_lock = threading.RLock()
     app.state.store = store
     app.state.exporter = exporter
@@ -259,6 +276,74 @@ def create_app(work_root):
                 }
             )
         return result
+
+    def get_inspector(handle):
+        with media_lock:
+            reader = inspectors.get(handle)
+        if reader is None:
+            raise ValueError("检查会话已关闭或服务已重启，请重新打开导出目录")
+        reader.ensure_unchanged()
+        return reader
+
+    @app.post("/api/inspect/open")
+    def inspect_open(body: ImportRequest):
+        handle = uuid.uuid4().hex
+        reader = ExportInspector(body.path, store.root / "cache" / "inspector" / handle)
+        with media_lock:
+            inspectors[handle] = reader
+            if len(inspectors) > 3:
+                inspectors.pop(next(iter(inspectors)))
+        return clean({"id": handle, **reader.summary})
+
+    @app.get("/api/inspect/{handle}/episode/{episode}")
+    def inspect_episode(
+        handle: str,
+        episode: int,
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=100, ge=1, le=250),
+    ):
+        return get_inspector(handle).episode(episode, offset, limit)
+
+    @app.get("/api/inspect/{handle}/frame/{episode}/{frame}")
+    def inspect_frame(handle: str, episode: int, frame: int):
+        return get_inspector(handle).frame(episode, frame)
+
+    @app.get("/api/inspect/{handle}/file")
+    def inspect_file(
+        handle: str,
+        path: str,
+        offset: int = Query(default=0, ge=0),
+        limit: int = Query(default=50, ge=1, le=100),
+    ):
+        return get_inspector(handle).file(path, offset, limit)
+
+    @app.get("/api/inspect/{handle}/image/{episode}/{camera}/{frame}")
+    def inspect_image(handle: str, episode: int, camera: int, frame: int):
+        reader = get_inspector(handle)
+        reader.frame_summary(episode, frame)
+        if not 0 <= camera < len(reader.dataset.cameras):
+            raise ValueError("未知相机")
+        cache = store.root / "cache" / "jpeg"
+        cache.mkdir(exist_ok=True)
+        filename = cache / f"inspect-{handle}-{episode}-{camera}-{frame}.jpg"
+        with media_lock:
+            if not filename.exists():
+                reader.dataset.decode(
+                    episode, reader.dataset.cameras[camera], frame
+                ).save(filename, quality=86)
+                files = sorted(cache.glob("*.jpg"), key=lambda p: p.stat().st_mtime)
+                size = sum(p.stat().st_size for p in files)
+                for p in files:
+                    if size <= 256 * 1024 * 1024:
+                        break
+                    if p != filename:
+                        size -= p.stat().st_size
+                        p.unlink()
+        return FileResponse(
+            filename,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "private, max-age=3600"},
+        )
 
     @app.get("/api/project")
     def project():
@@ -457,7 +542,9 @@ def create_app(work_root):
             with store.lock:
                 store.set("future_seen:" + source, True)
                 store.db.commit()
-        labels = store.labels(source, sf, selected(key, episode, frame))
+        with store.lock:
+            labels = store.labels(source, sf, selected(key, episode, frame))
+            window_revision = store.get("revision", 0)
         if mode == "state":
             labels = {
                 a: {
@@ -494,6 +581,7 @@ def create_app(work_root):
             ]
         return {
             "request_id": request_id,
+            "revision": window_revision,
             "frame": frame,
             "timestamp": rows[frame]["timestamp"],
             "history": history_samples,
@@ -572,6 +660,44 @@ def create_app(work_root):
                 "Cache-Control": "private, max-age=3600",
             },
         )
+
+    @app.post("/api/annotations/review-range")
+    def review_existing_labels(body: LabelReviewRequest):
+        ds = get_dataset(body.dataset)
+        bounds(ds, body.episode, body.start, body.end)
+        config = body.history_config.config()
+        if body.mode == "state":
+            ds.history_samples(body.episode, body.start, config)
+        source, a, b = key_range(ds, body.episode, body.start, body.end, body.dataset)
+        result = review_labels(
+            store,
+            source,
+            a,
+            b,
+            body.mode,
+            confirmed=body.confirmed,
+            preview=body.preview,
+            expected_version=body.expected_schema_version,
+            expected_revision=body.expected_revision,
+            history_config=config,
+        )
+        source_offset = a - body.start
+        for issue in result["issues"]:
+            issue.update(source_start=issue["start"], source_end=issue["end"])
+            issue["start"] -= source_offset
+            issue["end"] -= source_offset
+        result.update(
+            start=body.start,
+            end=body.end,
+            training_center_frames=sum(
+                max(0, min(body.end, row["end"]) - max(body.start, row["start"]))
+                for row in store.db.execute(
+                    "SELECT start,end FROM selections WHERE dataset=? AND episode=?",
+                    (body.dataset, body.episode),
+                )
+            ),
+        )
+        return result
 
     @app.post("/api/annotations")
     def annotate(body: AnnotationRequest):

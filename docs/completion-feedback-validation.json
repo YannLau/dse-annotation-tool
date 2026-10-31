@@ -1,0 +1,21 @@
+{
+  "checks": [
+    {
+      "case": "passed",
+      "focused": true,
+      "text": "✓\n检查通过\n×\n\nEP 0 · 帧 #30\n\n本帧所有必填与审核条件已完成。\n\n只读检查，不修改标签或 loss mask。",
+      "visible": true
+    },
+    {
+      "case": "issues",
+      "focused": true,
+      "text": "!\n待完成 · 8 条提示\n×\n\nEP 0 · 帧 #10\n\nleft: 缺少必填 adviser.x\nleft: 缺少必填 adviser.y\nleft: 缺少必填 adviser.z\nleft: 缺少必填 adviser.orientation\nleft: adviser.x 未完成当前 schema 审核\nleft: adviser.y 未完成当前 schema 审核\nleft: adviser.z 未完成当前 schema 审核\nleft: adviser.orientation 未完成当前 schema 审核\n只读检查，不修改标签或 loss mask。",
+      "visible": true
+    }
+  ],
+  "staleResultAfterEdit": 0,
+  "staleResultAfterFrameChange": 0,
+  "dismissed": true,
+  "frontendBuild": "passed",
+  "testWorkspace": "independent synthetic fixture; no user annotation workspace changed"
+}

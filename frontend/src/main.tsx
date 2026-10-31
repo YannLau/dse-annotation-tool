@@ -11,6 +11,7 @@ import {
   ReferenceLine,
 } from "recharts";
 import "./style.css";
+import ExportInspector from "./ExportInspector";
 type Obj = Record<string, any>;
 async function api(path: string, body?: any, signal?: AbortSignal) {
   const response = await fetch("/api" + path, {
@@ -738,6 +739,10 @@ function App() {
     [historyDraft, setHistoryDraft] = useState({ horizon: "0.6", frames: "4" }),
     [historyCapacity, setHistoryCapacity] = useState(0.6),
     [confirmed, setConfirmed] = useState(false),
+    [reviewScope, setReviewScope] = useState("frame"),
+    [reviewReport, setReviewReport] = useState<Obj | null>(null),
+    [reviewLoading, setReviewLoading] = useState(false),
+    [completionResult, setCompletionResult] = useState<Obj | null>(null),
     [playing, setPlaying] = useState(false),
     [speed, setSpeed] = useState(1),
     [tracks, setTracks] = useState<string[]>([]),
@@ -747,6 +752,7 @@ function App() {
     [pan, setPan] = useState([0, 0]),
     [job, setJob] = useState<Obj | null>(null),
     [destination, setDestination] = useState(""),
+    [inspectPath, setInspectPath] = useState(""),
     [ratio, setRatio] = useState(0.7),
     [cal, setCal] = useState<Obj>({
       verified: false,
@@ -818,6 +824,83 @@ function App() {
     view.evidence_mode === mode &&
     view.history_config?.horizon_seconds === historyConfig.horizon_seconds &&
     view.history_config?.num_frames === historyConfig.num_frames;
+  const completionContext = JSON.stringify([
+    datasetKey,
+    episode,
+    frame,
+    mode,
+    refresh,
+    schema?.version,
+    view?.revision,
+    busy,
+    batchDraft,
+  ]);
+  const completionRequest = useRef(0);
+  const completionAbort = useRef<AbortController | null>(null);
+  const completionPanel = useRef<HTMLDivElement | null>(null);
+  const visibleCompletion =
+    completionResult?.context === completionContext ? completionResult : null;
+  useEffect(() => {
+    ++completionRequest.current;
+    completionAbort.current?.abort();
+    return () => completionAbort.current?.abort();
+  }, [completionContext]);
+  useEffect(() => {
+    if (!visibleCompletion || visibleCompletion.state === "checking") return;
+    const id = requestAnimationFrame(() => {
+      completionPanel.current?.focus({ preventScroll: true });
+      completionPanel.current?.scrollIntoView({
+        block: "nearest",
+        behavior: "smooth",
+      });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [visibleCompletion]);
+  async function checkCompleteness() {
+    setPlaying(false);
+    completionAbort.current?.abort();
+    const controller = new AbortController();
+    completionAbort.current = controller;
+    const requestId = ++completionRequest.current;
+    const context = completionContext;
+    setCompletionResult({
+      context,
+      frame,
+      episode,
+      state: "checking",
+      errors: [],
+    });
+    try {
+      const result = await api(
+        `/completeness/${datasetKey}/${episode}/${frame}`,
+        undefined,
+        controller.signal,
+      );
+      if (requestId !== completionRequest.current || controller.signal.aborted)
+        return;
+      setCompletionResult({
+        context,
+        frame,
+        episode,
+        state: result.complete ? "passed" : "issues",
+        errors: [...new Set((result.errors || []).map(String))],
+      });
+    } catch (e: any) {
+      if (e.name !== "AbortError" && requestId === completionRequest.current)
+        setCompletionResult({
+          context,
+          frame,
+          episode,
+          state: "error",
+          errors: [e.message || String(e)],
+        });
+    }
+  }
+  function closeCompletion() {
+    ++completionRequest.current;
+    completionAbort.current?.abort();
+    setCompletionResult(null);
+  }
   const historySteps = Array.from(
     { length: historyConfig.num_frames },
     (_, i) => i,
@@ -1110,6 +1193,7 @@ function App() {
     return () => clearInterval(id);
   }, [job?.id, job?.status]);
   async function mutate(path: string, body: any) {
+    setReviewReport(null);
     pendingWrites.current++;
     setBusy(true);
     setMessage("正在保存…");
@@ -1269,6 +1353,7 @@ function App() {
     value: number | null,
     reviewed = false,
   ) {
+    setReviewReport(null);
     const body = annotation(arm, field, value, reviewed);
     if (interval) {
       const sameTarget = (change: Obj) =>
@@ -1324,35 +1409,59 @@ function App() {
       setBusy(false);
     }
   }
-  async function reviewCurrent() {
+  useEffect(() => {
+    setConfirmed(false);
+    setReviewReport(null);
+  }, [
+    reviewScope,
+    range[0],
+    range[1],
+    datasetKey,
+    episode,
+    frame,
+    mode,
+    historyConfig,
+  ]);
+  async function reviewCurrent(preview = false) {
     if (batchDraft.changes.length)
       return fail(Error("请先确认整组草稿，再审核已保存字段"));
-    if (!confirmed && mode === "state")
-      return fail(Error("先确认当前允许观测支持标签"));
-    const changes: Obj[] = [];
-    for (const arm of ["left", "right", "global"])
-      for (const f of schema!.fields) {
-        if ((f.evidence || "state") !== mode) continue;
-        const r = view?.labels[arm]?.[f.field_id];
-        if (
-          r?.value_id !== null &&
-          r?.value_id !== undefined &&
-          r.applicability === "applicable"
-        )
-          changes.push({
-            ...annotation(arm, f.field_id, r.value_id, true),
-            label_source: r.label_source || "human",
-            provenance: r.provenance || {},
-            start: frame,
-            end: frame + 1,
-            point: true,
-          });
+    if (!preview && !confirmed && mode === "state")
+      return fail(Error("先确认整个审核范围的允许观测支持标签"));
+    const start = reviewScope === "range" ? range[0] : frame;
+    const end = reviewScope === "range" ? range[1] : frame + 1;
+    if (!(0 <= start && start < end && end <= n))
+      return fail(Error("请先设置有效审核选区"));
+    setPlaying(false);
+    setReviewLoading(true);
+    const body = {
+      dataset: datasetKey,
+      episode,
+      start,
+      end,
+      mode,
+      confirmed,
+      preview,
+      expected_schema_version: schema!.version,
+      expected_revision: view?.revision,
+      history_config: historyConfig,
+    };
+    try {
+      const result = preview
+        ? await api("/annotations/review-range", body)
+        : await mutate("/annotations/review-range", body);
+      if (result) {
+        setReviewReport(result);
+        notify(
+          preview
+            ? `预检查：${result.eligible_pairs}个字段×帧可审核，尚未修改标签`
+            : `已审核 ${result.reviewed_pairs} 个字段×帧，覆盖 ${result.reviewed_frames} 帧；跳过 ${result.skipped_pairs} 项，可一次撤销`,
+        );
       }
-    if (changes.length)
-      await mutate("/annotations/batch", {
-        changes,
-        expected_schema_version: schema!.version,
-      });
+    } catch (e) {
+      fail(e);
+    } finally {
+      setReviewLoading(false);
+    }
   }
   const scopeFields = (arm: string) =>
     schema?.fields.filter(
@@ -1484,12 +1593,14 @@ function App() {
             ["schema", "字段与规则"],
             ["assist", "行为与校准"],
             ["export", "导出数据集"],
+            ["inspect", "导出检查器"],
           ].map(([key, label]) => (
             <button
               key={key}
               className={page === key ? "active" : ""}
               onClick={() => {
                 setPage(key);
+                if (key === "inspect") setPlaying(false);
                 if (key === "assist") {
                   setMode("behavior");
                   setPlaying(false);
@@ -1503,31 +1614,33 @@ function App() {
         <span className={"save-dot " + (busy ? "saving" : "")} />
         <small>{busy ? "保存中…" : "本地自动保存"}</small>
       </header>
-      <div className="import-bar">
-        <span>数据源</span>
-        <input
-          aria-label="本地数据路径"
-          value={path}
-          onChange={(e) => setPath(e.target.value)}
-        />
-        <button className="primary" disabled={busy} onClick={importSource}>
-          导入 / 重新绑定
-        </button>
-        {project?.datasets.length > 0 && (
-          <select
-            aria-label="已登记数据集"
-            value={datasetKey}
-            onChange={(e) => choose(e.target.value)}
-          >
-            <option value="">选择项目来源</option>
-            {project!.datasets.map((d: Obj) => (
-              <option key={d.fingerprint} value={d.fingerprint}>
-                {d.root.split("/").slice(-1)[0]} · {d.fingerprint.slice(0, 7)}
-              </option>
-            ))}
-          </select>
-        )}
-      </div>
+      {page !== "inspect" && (
+        <div className="import-bar">
+          <span>数据源</span>
+          <input
+            aria-label="本地数据路径"
+            value={path}
+            onChange={(e) => setPath(e.target.value)}
+          />
+          <button className="primary" disabled={busy} onClick={importSource}>
+            导入 / 重新绑定
+          </button>
+          {project?.datasets.length > 0 && (
+            <select
+              aria-label="已登记数据集"
+              value={datasetKey}
+              onChange={(e) => choose(e.target.value)}
+            >
+              <option value="">选择项目来源</option>
+              {project!.datasets.map((d: Obj) => (
+                <option key={d.fingerprint} value={d.fingerprint}>
+                  {d.root.split("/").slice(-1)[0]} · {d.fingerprint.slice(0, 7)}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
       {error ? (
         <div role="alert" className="notice error">
           {error}
@@ -1536,7 +1649,7 @@ function App() {
       ) : (
         <div className="notice">{message}</div>
       )}
-      {!dataset && (
+      {!dataset && page !== "inspect" && (
         <div className="empty">
           <span className="eyebrow">LOCAL DATA, REAL EVIDENCE</span>
           <h1>从真实观测，建立可靠标签。</h1>
@@ -2399,6 +2512,22 @@ function App() {
                 </button>
               </div>
             )}
+            <label className="review-scope">
+              标签审核范围
+              <select
+                aria-label="标签审核范围"
+                value={reviewScope}
+                onChange={(e) => setReviewScope(e.target.value)}
+              >
+                <option value="frame">当前帧 #{frame}</option>
+                <option value="range">
+                  当前选区 [{range[0]}, {range[1]}) · {range[1] - range[0]}帧
+                </option>
+              </select>
+            </label>
+            <p className="footnote">
+              审核只更新已有标签的审核状态，保留区间内每帧的不同取值与逐帧覆盖；不会把当前帧标签铺满选区。
+            </p>
             {mode === "state" && (
               <label className="check">
                 <input
@@ -2406,8 +2535,12 @@ function App() {
                   checked={confirmed}
                   onChange={(e) => setConfirmed(e.target.checked)}
                 />
-                我确认当前 [t−{historyConfig.horizon_seconds},t] 的{" "}
-                {historyConfig.num_frames} 个采样时刻能够支持这些状态标签。
+                我确认
+                {reviewScope === "range"
+                  ? `选区 [${range[0]},${range[1]}) 内各帧`
+                  : "当前帧"}
+                的 [t−{historyConfig.horizon_seconds},t]、
+                {historyConfig.num_frames} 个采样时刻能够支持已有状态标签。
               </label>
             )}
             <button
@@ -2415,34 +2548,143 @@ function App() {
               disabled={
                 !aligned ||
                 busy ||
+                reviewLoading ||
                 batchDraft.changes.length > 0 ||
                 (mode === "state" && !confirmed)
               }
-              onClick={reviewCurrent}
+              onClick={() => reviewCurrent()}
             >
-              审核当前已填写字段
+              {reviewScope === "range"
+                ? "审核选区已填写字段"
+                : "审核当前已填写字段"}
             </button>
             <button
               className="full"
-              disabled={!aligned || busy}
-              onClick={async () => {
-                try {
-                  const r = await api(
-                    `/completeness/${datasetKey}/${episode}/${frame}`,
-                  );
-                  if (r.complete) notify("本帧所有必填与审核条件已完成");
-                  else fail(Error(r.errors.join("；")));
-                } catch (e) {
-                  fail(e);
-                }
-              }}
+              disabled={
+                !aligned ||
+                busy ||
+                reviewLoading ||
+                batchDraft.changes.length > 0
+              }
+              onClick={() => reviewCurrent(true)}
             >
-              检查本帧完成条件
+              预检查审核范围（不修改）
             </button>
-            <p className="footnote">
-              unknown 是已填写类别；missing
-              不产生监督。不适用、待复核和仅上下文的 loss mask
-              为0。阶段修改会保留旧值并要求复核。
+            {reviewReport && (
+              <div className="review-report" role="status">
+                <b>
+                  {reviewReport.saved ? "审核结果" : "审核预检查"} · [
+                  {reviewReport.start},{reviewReport.end})
+                </b>
+                <p>
+                  {reviewReport.reviewed_pairs} 项
+                  {reviewReport.saved ? "已更新" : "可更新"} ·{" "}
+                  {reviewReport.already_reviewed_pairs} 项此前已审 ·{" "}
+                  {reviewReport.skipped_pairs} 项跳过（按字段×帧计数）
+                </p>
+                <small>
+                  选区内 {reviewReport.training_center_frames}/
+                  {reviewReport.frames}{" "}
+                  帧是训练中心；审核不会自动加入训练中心选区。
+                </small>
+                <details>
+                  <summary>查看跳过原因与位置</summary>
+                  <p>
+                    未填 {reviewReport.missing_pairs} · 不适用{" "}
+                    {reviewReport.inapplicable_pairs} · 适用未知{" "}
+                    {reviewReport.undetermined_pairs} · 冲突{" "}
+                    {reviewReport.conflict_pairs} · 废弃/删除类别{" "}
+                    {reviewReport.retired_pairs}
+                  </p>
+                  {reviewReport.issues.map((issue: Obj, i: number) => (
+                    <button key={i} onClick={() => setFrame(issue.start)}>
+                      [{issue.start},{issue.end}) {issue.arm}.{issue.field}：
+                      {issue.reason}
+                    </button>
+                  ))}
+                  {reviewReport.issue_groups > reviewReport.issues.length && (
+                    <small>显示前100组，可修复后重新预检查。</small>
+                  )}
+                </details>
+              </div>
+            )}
+            <button
+              className="full"
+              disabled={
+                !aligned || busy || visibleCompletion?.state === "checking"
+              }
+              onClick={checkCompleteness}
+              aria-describedby="completion-check-help"
+            >
+              {visibleCompletion?.state === "checking"
+                ? "正在检查本帧…"
+                : "检查本帧完成条件"}
+            </button>
+            {visibleCompletion && (
+              <div
+                className={"completion-feedback " + visibleCompletion.state}
+                ref={completionPanel}
+                tabIndex={-1}
+                role={
+                  visibleCompletion.state === "issues" ||
+                  visibleCompletion.state === "error"
+                    ? "alert"
+                    : "status"
+                }
+                aria-label="本帧完成条件检查结果"
+              >
+                <div className="completion-feedback-heading">
+                  <span className="completion-feedback-icon" aria-hidden="true">
+                    {visibleCompletion.state === "passed"
+                      ? "✓"
+                      : visibleCompletion.state === "checking"
+                        ? "…"
+                        : "!"}
+                  </span>
+                  <strong>
+                    {visibleCompletion.state === "passed"
+                      ? "检查通过"
+                      : visibleCompletion.state === "issues"
+                        ? `待完成 · ${visibleCompletion.errors.length} 条提示`
+                        : visibleCompletion.state === "error"
+                          ? "检查失败"
+                          : "正在检查…"}
+                  </strong>
+                  <button
+                    aria-label="关闭本帧检查结果"
+                    onClick={closeCompletion}
+                  >
+                    ×
+                  </button>
+                </div>
+                <p>
+                  EP {visibleCompletion.episode} · 帧 #{visibleCompletion.frame}
+                </p>
+                {visibleCompletion.state === "passed" ? (
+                  <p>本帧所有必填与审核条件已完成。</p>
+                ) : visibleCompletion.errors.length > 0 ? (
+                  <ul>
+                    {visibleCompletion.errors.map(
+                      (message: string, index: number) => (
+                        <li key={index}>{message}</li>
+                      ),
+                    )}
+                  </ul>
+                ) : (
+                  <p>正在读取本帧已保存的标签…</p>
+                )}
+                <small>只读检查，不修改标签或 loss mask。</small>
+                {batchDraft.changes.length > 0 && (
+                  <small className="completion-draft-note">
+                    还有 {batchDraft.changes.length}{" "}
+                    项未确认草稿，本次检查不包含这些草稿。
+                  </small>
+                )}
+              </div>
+            )}
+            <p className="footnote" id="completion-check-help">
+              审核允许保留部分有效监督；“检查本帧完成条件”只报告本帧全部必填与审核缺口，不修改标签。unknown
+              是已填类别；missing、不适用、待复核和仅上下文不计损失。
             </p>
             <div className="shortcuts">
               空格 播放 / 暂停
@@ -2821,6 +3063,14 @@ function App() {
           </div>
         </section>
       )}
+      {page === "inspect" && (
+        <ExportInspector
+          initialPath={inspectPath}
+          exports={(project?.jobs || []).filter(
+            (j: Obj) => j.status === "complete",
+          )}
+        />
+      )}
       {dataset && page === "export" && (
         <section className="settings">
           <span className="eyebrow">PORTABLE LEROBOT v2.1</span>
@@ -2924,6 +3174,15 @@ function App() {
                         }}
                       >
                         填入导入路径
+                      </button>
+                      <button
+                        className="primary"
+                        onClick={() => {
+                          setInspectPath(job.destination);
+                          setPage("inspect");
+                        }}
+                      >
+                        可视化检查此导出
                       </button>
                       <pre>{JSON.stringify(job.summary, null, 2)}</pre>
                     </>

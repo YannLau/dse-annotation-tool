@@ -1,0 +1,44 @@
+{
+  "tests": 38,
+  "frontend_build": "passed",
+  "test_data": "Synthetic test fixture；真实语义标注未改动",
+  "range": [
+    10,
+    40
+  ],
+  "newly_reviewed_field_frame_pairs": 119,
+  "frames_with_updates": 30,
+  "skipped_field_frame_pairs": 121,
+  "manual_checks": [
+    "readonly preview",
+    "single range submission",
+    "one undo restores drafts",
+    "frame15 point override retained as8",
+    "frame30 phase retained as4",
+    "completeness check does not revoke valid phase supervision"
+  ],
+  "retained_values": [
+    {
+      "frame": 10,
+      "value": 2,
+      "kind": "range",
+      "status": "reviewed"
+    },
+    {
+      "frame": 15,
+      "value": 8,
+      "kind": "point",
+      "status": "reviewed"
+    },
+    {
+      "frame": 30,
+      "value": 4,
+      "kind": "range",
+      "status": "reviewed"
+    }
+  ],
+  "history_config": {
+    "horizon_seconds": 0.6,
+    "num_frames": 4
+  }
+}
