@@ -416,6 +416,9 @@ nav button {
   pointer-events: none;
 }
 .timeline {
+  --timeline-label-width: 58px;
+  --timeline-gap: 12px;
+  --timeline-thumb-size: 14px;
   padding: 14px;
   background: #111d2b;
   border: 1px solid #28394e;
@@ -449,21 +452,54 @@ nav button {
 .transport button {
   font-size: 11px;
 }
+.scrubber-row {
+  margin-left: calc(var(--timeline-label-width) + var(--timeline-gap));
+}
 .scrubber {
+  appearance: none;
   display: block;
-  width: 100%;
-  margin: 15px 0 12px;
+  width: calc(100% + var(--timeline-thumb-size));
+  height: var(--timeline-thumb-size);
+  margin: 15px calc(var(--timeline-thumb-size) / -2) 12px;
   padding: 0;
-  accent-color: #57debb;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.scrubber::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: #2c4358;
+}
+.scrubber::-webkit-slider-thumb {
+  appearance: none;
+  width: var(--timeline-thumb-size);
+  height: var(--timeline-thumb-size);
+  margin-top: -5px;
+  border: 0;
+  border-radius: 50%;
+  background: #57debb;
+}
+.scrubber::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: #2c4358;
+}
+.scrubber::-moz-range-thumb {
+  width: var(--timeline-thumb-size);
+  height: var(--timeline-thumb-size);
+  border: 0;
+  border-radius: 50%;
+  background: #57debb;
 }
 .track {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--timeline-gap);
   height: 20px;
 }
 .track > span {
-  width: 58px;
+  width: var(--timeline-label-width);
   font-size: 10px;
   color: #788fa8;
   flex-shrink: 0;
@@ -973,7 +1009,6 @@ nav button {
   margin-bottom: 8px;
 }
 .extra-tracks .track > span {
-  width: 125px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1092,4 +1127,29 @@ nav button {
   .class-row {
     flex-wrap: wrap;
   }
+}
+
+.history-controls {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 0;
+}
+.history-controls label {
+  display: grid;
+  gap: 5px;
+  font-size: 11px;
+  color: #9eb0c5;
+}
+.history-controls input {
+  width: 110px;
+}
+.history-controls small {
+  width: 100%;
+  color: #8da2bb;
+  font-size: 10px;
+}
+.history-scroll {
+  overflow-x: auto;
 }

@@ -731,6 +731,12 @@ function App() {
     [preview, setPreview] = useState<Obj | null>(null),
     [previewLoading, setPreviewLoading] = useState(false),
     [futureHorizon, setFutureHorizon] = useState(0.25),
+    [historyConfig, setHistoryConfig] = useState({
+      horizon_seconds: 0.6,
+      num_frames: 4,
+    }),
+    [historyDraft, setHistoryDraft] = useState({ horizon: "0.6", frames: "4" }),
+    [historyCapacity, setHistoryCapacity] = useState(0.6),
     [confirmed, setConfirmed] = useState(false),
     [playing, setPlaying] = useState(false),
     [speed, setSpeed] = useState(1),
@@ -791,19 +797,86 @@ function App() {
     dataset?.episodes.find((e: Obj) => e.episode_index === episode)?.length ||
     1;
   const fps = dataset?.info.fps || 30;
-  const aligned = !!view && !loading && view.frame === frame;
+  const timelineStart = zoom?.[0] ?? 0;
+  const timelineEnd = zoom?.[1] ?? n - 1;
+  const timelineSpan = Math.max(1, timelineEnd - timelineStart);
+  const timelinePosition = (value: number) =>
+    (100 * (value - timelineStart)) / timelineSpan + "%";
+  const timelineInterval = (start: number, end: number) => ({
+    left: timelinePosition(start),
+    width: (100 * (end - start)) / timelineSpan + "%",
+  });
+  const timelineVisible = (start: number, end: number) =>
+    end > timelineStart && start <= timelineEnd;
+  useEffect(() => {
+    if (zoom && (frame < zoom[0] || frame > zoom[1])) setZoom(null);
+  }, [frame, zoom]);
+  const aligned =
+    !!view &&
+    !loading &&
+    view.frame === frame &&
+    view.evidence_mode === mode &&
+    view.history_config?.horizon_seconds === historyConfig.horizon_seconds &&
+    view.history_config?.num_frames === historyConfig.num_frames;
+  const historySteps = Array.from(
+    { length: historyConfig.num_frames },
+    (_, i) => i,
+  );
+  const historyOffsets = historySteps.map((i) =>
+    historyConfig.num_frames === 1
+      ? 0
+      : (historyConfig.horizon_seconds * (historyConfig.num_frames - 1 - i)) /
+        (historyConfig.num_frames - 1),
+  );
+  const currentStep = historyConfig.num_frames - 1;
+  function applyHistory() {
+    const horizon = Number(historyDraft.horizon),
+      frames = Number(historyDraft.frames);
+    if (
+      !historyDraft.horizon.trim() ||
+      !historyDraft.frames.trim() ||
+      !Number.isFinite(horizon) ||
+      horizon < 0 ||
+      horizon > 3600 ||
+      !Number.isInteger(frames) ||
+      frames < 1 ||
+      frames > 32 ||
+      (frames === 1) !== (horizon === 0)
+    )
+      return fail(
+        Error(
+          "跨度0–3600秒，时刻数1–32（含当前）；单时刻须设跨度0，多时刻须设正跨度",
+        ),
+      );
+    setPlaying(false);
+    setConfirmed(false);
+    setHistoryConfig({ horizon_seconds: horizon, num_frames: frames });
+    setHistoryCapacity((value) => Math.max(value, horizon));
+  }
   async function loadProject() {
     const p = await api("/project");
     setProject(p);
     setSchema(p.schema);
     return p;
   }
-  async function choose(key: string, e = 0, f = 0) {
+  async function choose(key: string, e = 0, f = 0, restoreHistory = false) {
     try {
       setLoading(true);
       setPlaying(false);
       const d = await api("/datasets/" + key);
       setDataset(d);
+      if (d.history_sampling && !restoreHistory) {
+        const config = {
+          horizon_seconds: d.history_sampling.horizon_seconds,
+          num_frames: d.history_sampling.num_frames,
+        };
+        setHistoryConfig(config);
+        setHistoryDraft({
+          horizon: String(config.horizon_seconds),
+          frames: String(config.num_frames),
+        });
+        setHistoryCapacity(d.history_context_seconds);
+      }
       if (d.root) setPath(d.root);
       if (key !== datasetKey) {
         setTracks(defaultTracks(d.info));
@@ -836,6 +909,16 @@ function App() {
         if (pref.taskSettings) setTaskSettings(pref.taskSettings);
         if (pref.coordinate) setCoordinate(pref.coordinate);
         if (pref.futureHorizon) setFutureHorizon(pref.futureHorizon);
+        if (pref.historyConfig) {
+          setHistoryConfig(pref.historyConfig);
+          setHistoryDraft({
+            horizon: String(pref.historyConfig.horizon_seconds),
+            frames: String(pref.historyConfig.num_frames),
+          });
+        }
+        setHistoryCapacity(
+          pref.historyCapacity ?? pref.historyConfig?.horizon_seconds ?? 0.6,
+        );
         try {
           const saved = localStorage.getItem("dse-batch-draft:" + p.work_root);
           const restored = saved ? JSON.parse(saved) : pref.batchDraft;
@@ -851,6 +934,7 @@ function App() {
             pref.datasetKey || p.datasets[0].fingerprint,
             pref.episode || 0,
             pref.frame || 0,
+            !!pref.historyConfig,
           ).then(() => {
             if (pref.tracks) setTracks(pref.tracks);
             if (pref.range) setRange(pref.range);
@@ -880,6 +964,8 @@ function App() {
           interval,
           batchDraft,
           futureHorizon,
+          historyConfig,
+          historyCapacity,
         }).catch(fail),
       400,
     );
@@ -898,6 +984,8 @@ function App() {
     interval,
     batchDraft,
     futureHorizon,
+    historyConfig,
+    historyCapacity,
   ]);
   useEffect(() => {
     if (project?.work_root && initial.current)
@@ -917,7 +1005,7 @@ function App() {
     const timer = setTimeout(async () => {
       try {
         const v = await api(
-          `/window/${datasetKey}/${episode}/${frame}?mode=${mode}&request_id=${version}&future_horizon=${futureHorizon}`,
+          `/window/${datasetKey}/${episode}/${frame}?mode=${mode}&request_id=${version}&future_horizon=${futureHorizon}&history_horizon=${historyConfig.horizon_seconds}&history_frames=${historyConfig.num_frames}`,
           undefined,
           controller.signal,
         );
@@ -978,7 +1066,7 @@ function App() {
       controller.abort();
       blobs.forEach(URL.revokeObjectURL);
     };
-  }, [datasetKey, episode, frame, mode, refresh, futureHorizon]);
+  }, [datasetKey, episode, frame, mode, refresh, futureHorizon, historyConfig]);
   useEffect(() => {
     if (playing)
       playbackClock.current = {
@@ -1115,6 +1203,7 @@ function App() {
       reviewed,
       confirmed,
       point: !interval,
+      history_config: historyConfig,
     };
   }
   const focusFrame =
@@ -1567,8 +1656,46 @@ function App() {
             </div>
             <div className="evidence-note">
               {mode === "state"
-                ? "观测窗口 [t−0.6, t] · 只显示实测反馈 · 不显示动作指令及未来标签"
+                ? `观测窗口 [t−${historyConfig.horizon_seconds}, t] · ${historyConfig.num_frames} 个时刻（含当前）· 只显示实测反馈 · 不显示动作指令及未来标签`
                 : "整段行为证据 · 可审核动作、事件与 adviser · 查看行为模式将记录未来证据暴露"}
+            </div>
+            <div className="history-controls">
+              <label>
+                历史跨度（秒）
+                <input
+                  aria-label="历史跨度（秒）"
+                  type="number"
+                  min="0"
+                  max="3600"
+                  step="0.1"
+                  value={historyDraft.horizon}
+                  onChange={(e) =>
+                    setHistoryDraft({
+                      ...historyDraft,
+                      horizon: e.target.value,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                时刻数（含当前）
+                <input
+                  aria-label="历史时刻数（含当前）"
+                  type="number"
+                  min="1"
+                  max="32"
+                  step="1"
+                  value={historyDraft.frames}
+                  onChange={(e) =>
+                    setHistoryDraft({ ...historyDraft, frames: e.target.value })
+                  }
+                />
+              </label>
+              <button onClick={applyHistory}>应用历史设置</button>
+              <small>
+                每个时刻含三相机；均匀采样到当前 t。5秒 / 3时刻 =
+                t−5、t−2.5、t。改变证据窗口后请复核状态标签。
+              </small>
             </div>
             <div className={"camera-region " + (!aligned ? "unaligned" : "")}>
               <div className="current-cameras">
@@ -1579,12 +1706,12 @@ function App() {
                         <span>{names[cam] || cam}</span>
                         <span>t · #{frame}</span>
                       </div>
-                      {images[`3:${c}`] && aligned ? (
+                      {images[`${currentStep}:${c}`] && aligned ? (
                         <img
-                          src={images[`3:${c}`]}
+                          src={images[`${currentStep}:${c}`]}
                           alt={`${names[cam] || cam} 当前帧 ${frame}`}
                           onClick={() => {
-                            setModal(images[`3:${c}`]);
+                            setModal(images[`${currentStep}:${c}`]);
                             setScale(1);
                             setPan([0, 0]);
                           }}
@@ -1598,42 +1725,51 @@ function App() {
                   ),
                 )}
               </div>
-              <div className="history-grid">
-                <div className="history-label">历史参考</div>
-                {[0, 1, 2, 3].map((t: number) => (
-                  <div className="history-time" key={t}>
-                    {["t − 0.6", "t − 0.4", "t − 0.2", "当前 t"][t]}
-                    <small>
-                      {aligned && view?.history[t].frame !== null
-                        ? `#${view?.history[t].frame} · ${view?.history[t].timestamp.toFixed(3)}s`
-                        : "缺失 / mask 0"}
-                    </small>
-                  </div>
-                ))}
-                {(view?.cameras || Object.keys(names)).map(
-                  (cam: string, c: number) => (
-                    <React.Fragment key={cam}>
-                      <div className="history-label">{names[cam] || cam}</div>
-                      {[0, 1, 2, 3].map((t) => (
-                        <div className="history-cell" key={t}>
-                          {aligned && images[`${t}:${c}`] ? (
-                            <img
-                              alt={`${cam} 历史 ${t}`}
-                              src={images[`${t}:${c}`]}
-                              onClick={() => {
-                                setModal(images[`${t}:${c}`]);
-                                setScale(1);
-                                setPan([0, 0]);
-                              }}
-                            />
-                          ) : (
-                            <span>{loading ? "同步中…" : "无有效历史"}</span>
-                          )}
-                        </div>
-                      ))}
-                    </React.Fragment>
-                  ),
-                )}
+              <div className="history-scroll">
+                <div
+                  className="history-grid"
+                  style={{
+                    gridTemplateColumns: `55px repeat(${historyConfig.num_frames}, minmax(75px, 1fr))`,
+                  }}
+                >
+                  <div className="history-label">历史参考</div>
+                  {historySteps.map((t: number) => (
+                    <div className="history-time" key={t}>
+                      {t === currentStep
+                        ? "当前 t"
+                        : `t − ${Number(historyOffsets[t].toFixed(3))}`}
+                      <small>
+                        {aligned && view?.history[t]?.frame != null
+                          ? `#${view?.history[t].frame} · ${view?.history[t].timestamp.toFixed(3)}s`
+                          : "缺失 / mask 0"}
+                      </small>
+                    </div>
+                  ))}
+                  {(view?.cameras || Object.keys(names)).map(
+                    (cam: string, c: number) => (
+                      <React.Fragment key={cam}>
+                        <div className="history-label">{names[cam] || cam}</div>
+                        {historySteps.map((t) => (
+                          <div className="history-cell" key={t}>
+                            {aligned && images[`${t}:${c}`] ? (
+                              <img
+                                alt={`${cam} 历史 ${t}`}
+                                src={images[`${t}:${c}`]}
+                                onClick={() => {
+                                  setModal(images[`${t}:${c}`]);
+                                  setScale(1);
+                                  setPan([0, 0]);
+                                }}
+                              />
+                            ) : (
+                              <span>{loading ? "同步中…" : "无有效历史"}</span>
+                            )}
+                          </div>
+                        ))}
+                      </React.Fragment>
+                    ),
+                  )}
+                </div>
               </div>
               {loading && (
                 <div className="loading-overlay">
@@ -1765,35 +1901,38 @@ function App() {
                 </button>
                 <button onClick={() => setZoom(null)}>全段</button>
               </div>
-              <input
-                className="scrubber"
-                aria-label="帧游标"
-                type="range"
-                min={zoom?.[0] ?? 0}
-                max={zoom?.[1] ?? n - 1}
-                value={frame}
-                onChange={(e) => {
-                  setPlaying(false);
-                  setFrame(+e.target.value);
-                }}
-              />
-              <div className="track">
+              <div className="scrubber-row">
+                <input
+                  className="scrubber"
+                  aria-label="帧游标"
+                  type="range"
+                  min={timelineStart}
+                  max={timelineEnd}
+                  value={frame}
+                  onChange={(e) => {
+                    setPlaying(false);
+                    setFrame(+e.target.value);
+                  }}
+                />
+              </div>
+              <div className="track training-centers">
                 <span>训练中心</span>
                 <div>
-                  {view?.selections.map((s: Obj) => (
-                    <button
-                      title={`[${s.start},${s.end})`}
-                      key={s.id}
-                      style={{
-                        left: (100 * s.start) / n + "%",
-                        width: (100 * (s.end - s.start)) / n + "%",
-                      }}
-                      onClick={() => {
-                        setRange([s.start, s.end]);
-                        setFrame(s.start);
-                      }}
-                    />
-                  ))}
+                  {view?.selections
+                    .filter((s: Obj) => timelineVisible(s.start, s.end))
+                    .map((s: Obj) => (
+                      <button
+                        title={`[${s.start},${s.end})`}
+                        key={s.id}
+                        aria-label={`训练中心区间 [${s.start},${s.end})`}
+                        style={timelineInterval(s.start, s.end)}
+                        onClick={() => {
+                          setPlaying(false);
+                          setRange([s.start, s.end]);
+                          setFrame(s.start);
+                        }}
+                      />
+                    ))}
                 </div>
               </div>
               {mode === "behavior" &&
@@ -1803,7 +1942,13 @@ function App() {
                     <div>
                       {view?.tracks
                         .filter(
-                          (r: Obj) => r.arm === arm && r.field === "phase",
+                          (r: Obj) =>
+                            r.arm === arm &&
+                            r.field === "phase" &&
+                            timelineVisible(
+                              r.start - (view.source_key.frame - view.frame),
+                              r.end - (view.source_key.frame - view.frame),
+                            ),
                         )
                         .map((r: Obj) => {
                           const offset = view.source_key.frame - view.frame;
@@ -1815,8 +1960,10 @@ function App() {
                               key={r.id}
                               title={c ? display(c) : "missing"}
                               style={{
-                                left: (100 * (r.start - offset)) / n + "%",
-                                width: (100 * (r.end - r.start)) / n + "%",
+                                ...timelineInterval(
+                                  r.start - offset,
+                                  r.end - offset,
+                                ),
                                 background: c?.color,
                               }}
                               onClick={() =>
@@ -1832,48 +1979,55 @@ function App() {
                 <div className="track">
                   <span>事件 / 动作</span>
                   <div>
-                    {view?.reviews.map((r: Obj) => (
-                      <i
-                        key={"r" + r.id}
-                        style={{
-                          left:
-                            (100 *
-                              (r.start -
-                                (view.source_key.frame - view.frame))) /
-                              n +
-                            "%",
-                          width: (100 * (r.end - r.start)) / n + "%",
-                          background:
-                            r.status === "approved"
-                              ? "#34d399"
-                              : r.status === "rejected"
-                                ? "#f87171"
-                                : "#64748b",
-                        }}
-                      />
-                    ))}
-                    {view?.events.map((e: Obj) => (
-                      <button
-                        className="event-marker"
-                        title={`${e.type} · ${e.status}`}
-                        key={"e" + e.id}
-                        style={{
-                          left:
-                            (100 *
-                              (e.frame -
-                                (view.source_key.frame - view.frame))) /
-                              n +
-                            "%",
-                        }}
-                        onClick={() =>
-                          setFrame(
-                            e.frame - (view.source_key.frame - view.frame),
-                          )
-                        }
-                      >
-                        ◆
-                      </button>
-                    ))}
+                    {view?.reviews
+                      .filter((r: Obj) =>
+                        timelineVisible(
+                          r.start - (view.source_key.frame - view.frame),
+                          r.end - (view.source_key.frame - view.frame),
+                        ),
+                      )
+                      .map((r: Obj) => (
+                        <i
+                          key={"r" + r.id}
+                          style={{
+                            ...timelineInterval(
+                              r.start - (view.source_key.frame - view.frame),
+                              r.end - (view.source_key.frame - view.frame),
+                            ),
+                            background:
+                              r.status === "approved"
+                                ? "#34d399"
+                                : r.status === "rejected"
+                                  ? "#f87171"
+                                  : "#64748b",
+                          }}
+                        />
+                      ))}
+                    {view?.events
+                      .filter((e: Obj) => {
+                        const value =
+                          e.frame - (view.source_key.frame - view.frame);
+                        return timelineStart <= value && value <= timelineEnd;
+                      })
+                      .map((e: Obj) => (
+                        <button
+                          className="event-marker"
+                          title={`${e.type} · ${e.status}`}
+                          key={"e" + e.id}
+                          style={{
+                            left: timelinePosition(
+                              e.frame - (view.source_key.frame - view.frame),
+                            ),
+                          }}
+                          onClick={() =>
+                            setFrame(
+                              e.frame - (view.source_key.frame - view.frame),
+                            )
+                          }
+                        >
+                          ◆
+                        </button>
+                      ))}
                   </div>
                 </div>
               )}
@@ -1904,7 +2058,14 @@ function App() {
                               {view?.tracks
                                 .filter(
                                   (r: Obj) =>
-                                    r.arm === arm && r.field === f.field_id,
+                                    r.arm === arm &&
+                                    r.field === f.field_id &&
+                                    timelineVisible(
+                                      r.start -
+                                        (view.source_key.frame - view.frame),
+                                      r.end -
+                                        (view.source_key.frame - view.frame),
+                                    ),
                                 )
                                 .map((r: Obj) => {
                                   const offset =
@@ -1917,10 +2078,10 @@ function App() {
                                       key={r.id}
                                       title={`${c ? display(c) : "missing"} · ${r.status}`}
                                       style={{
-                                        left:
-                                          (100 * (r.start - offset)) / n + "%",
-                                        width:
-                                          (100 * (r.end - r.start)) / n + "%",
+                                        ...timelineInterval(
+                                          r.start - offset,
+                                          r.end - offset,
+                                        ),
                                         background: c?.color,
                                         opacity:
                                           r.status === "reviewed" ? 1 : 0.4,
@@ -2011,7 +2172,8 @@ function App() {
               </div>
               <small>
                 当前选区 [{range[0]}, {range[1]}) · 包含帧 {range[0]}–
-                {range[1] - 1} · 历史最多0.6秒，尾部复核最多0.25秒另行保留。
+                {range[1] - 1} · 导出前史 {historyCapacity}{" "}
+                秒，尾部复核最多0.25秒另行保留。
               </small>
             </div>
             <section className="telemetry">
@@ -2244,7 +2406,8 @@ function App() {
                   checked={confirmed}
                   onChange={(e) => setConfirmed(e.target.checked)}
                 />
-                我确认当前 [t−0.6,t] 允许观测能够支持这些状态标签。
+                我确认当前 [t−{historyConfig.horizon_seconds},t] 的{" "}
+                {historyConfig.num_frames} 个采样时刻能够支持这些状态标签。
               </label>
             )}
             <button
@@ -2669,6 +2832,25 @@ function App() {
           <div className="grid2">
             <article>
               <h2>发布设置</h2>
+              <p>
+                训练默认历史：{historyConfig.horizon_seconds} 秒 /{" "}
+                {historyConfig.num_frames} 个时刻（含当前），可在主页修改。
+              </p>
+              <label>
+                保留前史（秒）
+                <input
+                  aria-label="导出保留前史（秒）"
+                  type="number"
+                  min={historyConfig.horizon_seconds}
+                  max="3600"
+                  step="0.1"
+                  value={historyCapacity}
+                  onChange={(e) => setHistoryCapacity(+e.target.value)}
+                />
+              </label>
+              <p>
+                可预留更长前史供实验使用。例如保留5秒后，训练可切换0.6秒或5秒并改变帧数；仅保留0.6秒的旧导出需重新导出才能实验5秒。
+              </p>
               <label>
                 新目标目录
                 <input
@@ -2695,13 +2877,18 @@ function App() {
               </p>
               <button
                 className="primary"
-                disabled={!!job && ["running", "queued"].includes(job.status)}
+                disabled={
+                  historyCapacity < historyConfig.horizon_seconds ||
+                  (!!job && ["running", "queued"].includes(job.status))
+                }
                 onClick={async () => {
                   try {
                     const j = await api("/export", {
                       dataset: datasetKey,
                       destination,
                       key_ratio: ratio,
+                      history_config: historyConfig,
+                      history_context_seconds: historyCapacity,
                     });
                     setJob(j);
                   } catch (e) {
@@ -2756,7 +2943,11 @@ function App() {
                     <p key={s.id}>
                       中心 [{s.start}, {s.end}) · {s.end - s.start} 帧<br />
                       <small>
-                        预计保留 {Math.max(0, s.start / fps - 0.6).toFixed(3)}–
+                        预计保留{" "}
+                        {Math.max(0, s.start / fps - historyCapacity).toFixed(
+                          3,
+                        )}
+                        –
                         {Math.min(
                           (e.length - 1) / fps,
                           (s.end - 1) / fps + 0.25,

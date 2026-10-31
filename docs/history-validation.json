@@ -1,0 +1,95 @@
+{
+  "history_config": {
+    "horizon_seconds": 5.0,
+    "num_frames": 3,
+    "offsets_seconds": [
+      5.0,
+      2.5,
+      0.0
+    ],
+    "sampling": "at_or_before",
+    "includes_current": true
+  },
+  "source_frames": [
+    40,
+    115,
+    190
+  ],
+  "image_shape": [
+    2,
+    3,
+    3,
+    3,
+    256,
+    256
+  ],
+  "state_shape": [
+    2,
+    3,
+    18
+  ],
+  "actual_offsets": [
+    -5.0,
+    -2.5,
+    0.0
+  ],
+  "all_history_present": true,
+  "short_history_shape": [
+    1,
+    4,
+    3,
+    3,
+    256,
+    256
+  ],
+  "moved_export": "/home/punk/yann_repo/paper_code_01/dse_annotation_tool/exports/real-history-20261031-moved",
+  "source_hash_before": "ee5011e1baece32d12286f19e25ca9b9ed69c2470f3245e0621ad6a77f91d9d9",
+  "source_hash_after": "ee5011e1baece32d12286f19e25ca9b9ed69c2470f3245e0621ad6a77f91d9d9",
+  "source_unchanged": true,
+  "semantic_labels_created": false,
+  "job_summary": {
+    "complete": 0,
+    "partial": 0,
+    "no_supervision": 3,
+    "missing_fields": 6,
+    "center_count": 3,
+    "context_count": 157,
+    "counts": {
+      "left.phase:missing": 3,
+      "left.holding:missing": 3,
+      "left.close_readiness:missing": 3,
+      "left.release_readiness:missing": 3,
+      "left.adviser.x:missing": 3,
+      "left.adviser.y:missing": 3,
+      "left.adviser.z:missing": 3,
+      "left.adviser.orientation:missing": 3,
+      "right.phase:missing": 3,
+      "right.holding:missing": 3,
+      "right.close_readiness:missing": 3,
+      "right.release_readiness:missing": 3,
+      "right.adviser.x:missing": 3,
+      "right.adviser.y:missing": 3,
+      "right.adviser.z:missing": 3,
+      "right.adviser.orientation:missing": 3
+    },
+    "warnings": [
+      "无可用 key 采样池",
+      "无可用 background 采样池"
+    ],
+    "segments": [
+      {
+        "source_episode": 0,
+        "center": [
+          190,
+          193
+        ],
+        "retained": [
+          40,
+          200
+        ],
+        "new_episode": 0
+      }
+    ],
+    "elapsed_seconds": 5.074140032986179
+  }
+}

@@ -7,12 +7,24 @@ import numpy as np
 import pyarrow.parquet as pq
 from .dataset import Dataset, verify_manifest
 from .schema import resolve, validate_schema
+from .history import HistoryConfig
 
 
 class DSEDataset:
-    def __init__(self, root, cache, size=256):
+    def __init__(self, root, cache, size=256, *, history_config=None):
         self.root = Path(root)
         verify_manifest(self.root, annotations_only=True)
+        manifest = json.loads((self.root / "annotations/manifest.json").read_text())
+        self.history_config = HistoryConfig.from_dict(
+            history_config
+            if history_config is not None
+            else manifest.get("history_sampling")
+        )
+        capacity = manifest.get("context_seconds", {}).get("history", 0.6)
+        if self.history_config.horizon_seconds > capacity + 1e-8:
+            raise ValueError(
+                f"请求{self.history_config.horizon_seconds}秒历史，但导出仅保留{capacity}秒；请从原数据重新导出更长前史"
+            )
         self.dataset = Dataset(root, cache)
         self.size = size
         self.schema = json.loads((self.root / "annotations/schema.json").read_text())
@@ -55,13 +67,15 @@ class DSEDataset:
         sample = self.centers[index]
         e = sample["episode_index"]
         i = sample["frame_index"]
-        history = self.dataset.history(e, i)
+        history_samples = self.dataset.history_samples(e, i, self.history_config)
+        history = [r["frame"] for r in history_samples]
+        steps = self.history_config.num_frames
         rows = self.dataset.rows(e)
-        images = np.zeros((4, 3, 3, self.size, self.size), np.float32)
-        mask = np.zeros((4, 3), bool)
-        state = np.zeros((4, len(rows[i]["observation.state"])), np.float64)
-        ee = np.zeros((4, 2, 7), np.float64)
-        ee_valid = np.zeros((4, 2), bool)
+        images = np.zeros((steps, 3, 3, self.size, self.size), np.float32)
+        mask = np.zeros((steps, 3), bool)
+        state = np.zeros((steps, len(rows[i]["observation.state"])), np.float64)
+        ee = np.zeros((steps, 2, 7), np.float64)
+        ee_valid = np.zeros((steps, 2), bool)
         for t, frame in enumerate(history):
             if frame is None:
                 continue
@@ -98,6 +112,20 @@ class DSEDataset:
             "state_valid_mask": np.asarray([f is not None for f in history]),
             "ee_pose_feedback": ee,
             "ee_pose_valid_mask": ee_valid,
+            "history_frame_indices": np.asarray(
+                [f if f is not None else -1 for f in history], dtype=np.int64
+            ),
+            "history_target_offsets": -np.asarray(
+                self.history_config.offsets, dtype=np.float64
+            ),
+            "history_actual_offsets": np.asarray(
+                [
+                    r["relative_timestamp"] if r["frame"] is not None else np.nan
+                    for r in history_samples
+                ],
+                dtype=np.float64,
+            ),
+            "history_config": self.history_config.to_dict(),
             "task": task,
             "labels": labels,
             "loss_masks": loss,
@@ -120,6 +148,9 @@ class DSEDataset:
                 "state_valid_mask",
                 "ee_pose_feedback",
                 "ee_pose_valid_mask",
+                "history_frame_indices",
+                "history_target_offsets",
+                "history_actual_offsets",
             ]
         }
         for key in ["task", "source_keys"]:
@@ -133,6 +164,7 @@ class DSEDataset:
                 for a in ["left", "right", "global"]
             }
         result["coordinates_verified"] = False
+        result["history_config"] = self.history_config.to_dict()
         return result
 
     def sample_indices(self, count, seed=0):

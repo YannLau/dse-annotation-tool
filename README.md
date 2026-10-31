@@ -1,6 +1,6 @@
 # DSE 双臂 LeRobot v2.1 标注工作台
 
-单人、本机运行的 React + TypeScript / FastAPI 应用。读取真实 Parquet 和 AV1 视频，提供三视角四时刻同步浏览、左右臂独立区间标注、逐帧覆盖、schema 门控配置、动作复核和独立片段数据集导出。数据与标注留在本地；没有账号、CDN、云服务或模型 API。
+单人、本机运行的 React + TypeScript / FastAPI 应用。读取真实 Parquet 和 AV1 视频，提供三视角可配置历史同步浏览、左右臂独立区间标注、逐帧覆盖、schema 门控配置、动作复核和独立片段数据集导出。数据与标注留在本地；没有账号、CDN、云服务或模型 API。
 
 ## 启动
 
@@ -26,7 +26,7 @@ uv sync --frozen --group dev
 ## 使用步骤
 
 1. 顶部输入本机 LeRobot **v2.1** 目录，点击“导入 / 重新绑定”。原始样例为 `/home/punk/yann_repo/paper_code_01/tron2_dataset/lerobot_v2.1_examples`。程序读取目录，不上传视频，也不向源目录写缓存或标签。v3/未知版本明确拒绝。
-2. 左侧选择 episode。拖动统一帧游标或输入源帧，中央显示当前三相机与 t−0.6 / t−0.4 / t−0.2 / t 四列历史。缺少历史显示缺失卡，不借用未来帧。点击图片放大，使用＋/−缩放和拖动平移。
+2. 左侧选择 episode。拖动统一帧游标或输入源帧，中央显示当前三相机与可配置历史。主页“历史跨度（秒）/时刻数（含当前）”设置后点击应用；默认 0.6 秒 / 4 时刻，5 秒 / 3 时刻对应 t−5、t−2.5、t。设置持久化，审核记录保存当时历史配置。缺少历史显示缺失卡，不借用未来帧。点击图片放大，使用＋/−缩放和拖动平移。
 3. **状态标注**只展示当前允许历史的 state/末端实测反馈，隐藏 action、末端命令、未来曲线、adviser 答案与阶段轨。**行为复核**展示整段遥测、事件、标签轨及三路未来参考画面，默认 t+0.1 / t+0.2 / t+0.25 秒，也可将参考跨度改为0.5/1/2/5秒。未来图可以放大，查看时保持当前决策帧不动；不足未来显示缺失卡。自动 adviser 计算仍只使用最多0.25秒的连续 approved 窗口。切换模式保留游标与选区；查看行为证据会留下 `future_seen` 记录，不宣称能够消除人的未来记忆。
 4. 设置首帧（含）和末帧（不含），例如 `[150,180)` 包含 150–179 帧。点击“保留训练区间”只设训练中心。多个区间、各字段区间和动作审核区间相互独立。
 5. 默认选择下拉类别即自动保存**当前单帧草稿**。勾选“应用到明确选区”后，选择阶段会立即显示草稿值、自动重算必填与适用关系；接着填写其他字段，最后只点一次“确认保存全部 N 项”。影响/跳过/适用未知/重叠数量按整组更新，整组保存失败全部回滚，撤销/重做也按整组处理。未确认草稿保存在浏览器及 SQLite 偏好中，刷新可恢复；可移除单项或取消整组。草稿先不写正式标签。逐帧覆盖始终优先于批量区间；不会自动向后传播或插值类别。
@@ -53,7 +53,7 @@ uv sync --frozen --group dev
 
 ## 导出协议
 
-每个不相邻中心区间形成独立新 episode，并按源时间保留最多0.6秒前史、0.25秒尾部审核上下文。相邻/重叠中心合并，不能把有缺口的片段接成虚构连续动作。重新生成 episode/frame/global index 和从0起的时间，保留原 observation/action 数值，按实际物理类型修正元数据，支持多个 chunk。
+每个不相邻中心区间形成独立新 episode，并按源时间保留可配置前史（默认0.6秒）和0.25秒尾部审核上下文。导出页可额外预留更长前史，例如5秒，供后续不同跨度/帧数实验。稀疏采样所需的目标前一行也保留，以兼容不规则时间戳。manifest 记录默认历史配置与保留容量；超出旧裁剪容量必须从原始数据重新导出。相邻/重叠中心合并，不能把有缺口的片段接成虚构连续动作。重新生成 episode/frame/global index 和从0起的时间，保留原 observation/action 数值，按实际物理类型修正元数据，支持多个 chunk。
 
 视频精确解码选帧后重编码为 H.264/yuv420p，保留源分辨率与 FPS；记录编码参数和源 PTS 映射。H.264 是有损重编码，不承诺 AV1 字节或像素完全一致。
 
@@ -83,15 +83,22 @@ annotations/
 from dse_tool.adapter import DSEDataset, proprioception36, training_statistics
 
 reader = DSEDataset('/path/to/export', cache='/path/to/work/cache/dse')
+# 默认继承 manifest；实验时可覆盖（导出须预留至少5秒前史）：
+# reader = DSEDataset('/path/to/export', cache='/path/to/work/cache/dse',
+#     history_config={"horizon_seconds": 5.0, "num_frames": 3})
 batch = reader.batch([0, 1])
-# images: [B,4,3,3,256,256], RGB float32 [0,1]
-# image_valid_mask: [B,4,3]
-# state: [B,4,18] 原始精度；state_valid_mask 屏蔽不足历史
-# ee_pose_feedback: [B,4,2,7]，另有 ee_pose_valid_mask
+# images: [B,T,3,3,256,256]，默认 T=4, RGB float32 [0,1]
+# image_valid_mask: [B,T,3]
+# state: [B,T,18] 原始精度；state_valid_mask 屏蔽不足历史
+# ee_pose_feedback: [B,T,2,7]，另有 ee_pose_valid_mask
 # labels / loss_masks: arm -> field_id -> 整数数组
-# source_keys / task；默认没有 action、ee_pose_cmd 或未来图像
+# history_target_offsets / history_actual_offsets: [B,T]，相对当前秒数；缺失实际时间 NaN，时间编码前按 mask 清零
+# history_frame_indices: [B,T]，缺失 -1；history_config 供实验记录
+# source_keys / task；没有 action、ee_pose_cmd 或未来图像
 indices = reader.sample_indices(16, seed=0)  # 全无有效监督会明确报错
 ```
+
+H=0、T=1 支持当前帧消融；T 包含当前，每时刻含全部三相机。模型须使用动态 T 与实际相对时间编码。变短或变稀疏历史后，原状态标签可能缺少可观察证据，需按新配置复核；工具保留 provenance，不自动修改旧标签的审核结论。
 
 适配器校验 annotations 校验和，并重新使用共享规则引擎校验 mask。稳定类别 ID 不必连续，训练分类头顺序见 head_spec 的 class_ids；需要时使用 `encode_class_targets` 转为交叉熵索引。若训练环境安装 PyTorch，可用 `to_torch_batch` 递归转换 NumPy 数组。
 
@@ -112,6 +119,8 @@ uv pip install --python .validation/bin/python --no-deps \
   -r requirements/lerobot-validation.lock
 PYTHONPATH= .validation/bin/python scripts/validate_lerobot.py /path/to/moved/export
 ```
+
+可配置历史的接口、实验约定与验证见 [历史配置说明](docs/CONFIGURABLE_HISTORY_2026-10-31.md)。
 
 本次交互修复与验证见 [工作流修复说明](docs/WORKFLOW_FIXES_2026-10-31.md)。
 

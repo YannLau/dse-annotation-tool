@@ -9,6 +9,8 @@ from functools import wraps
 import av
 import numpy as np
 import pyarrow.parquet as pq
+from .history import sample_history
+from .history import HistoryConfig
 
 
 def read_jsonl(path):
@@ -89,6 +91,20 @@ class Dataset:
         self.tables = OrderedDict()
         self.maps = OrderedDict()
         self.source_map = None
+        manifest_path = self.root / "annotations/manifest.json"
+        manifest = (
+            json.loads(manifest_path.read_text()) if manifest_path.exists() else None
+        )
+        self.history_sampling = (
+            HistoryConfig.from_dict(manifest.get("history_sampling")).to_dict()
+            if manifest is not None
+            else None
+        )
+        self.history_capacity = (
+            manifest.get("context_seconds", {}).get("history", 0.6)
+            if manifest is not None
+            else None
+        )
         if (self.root / "annotations/source_map.parquet").exists():
             self.source_map = {
                 (r["episode_index"], r["frame_index"]): r
@@ -244,16 +260,21 @@ class Dataset:
         except ValueError:
             return 0
 
-    def history(self, episode, frame):
-        times = np.asarray(self.table(episode)["timestamp"].to_pylist())
-        now = times[frame]
-        return [
-            int(i) if i >= 0 else None
-            for i in [
-                np.searchsorted(times, now - offset + 1e-8, side="right") - 1
-                for offset in [0.6, 0.4, 0.2, 0.0]
-            ]
-        ]
+    def history_samples(self, episode, frame, config=None):
+        config = HistoryConfig.from_dict(config)
+        if (
+            self.history_capacity is not None
+            and config.horizon_seconds > self.history_capacity + 1e-8
+        ):
+            raise ValueError(
+                f"来源仅保留{self.history_capacity}秒前史；请从原始数据重新导出更长前史"
+            )
+        return sample_history(
+            self.table(episode)["timestamp"].to_pylist(), frame, config
+        )
+
+    def history(self, episode, frame, config=None):
+        return [r["frame"] for r in self.history_samples(episode, frame, config)]
 
     def future(self, episode, frame, horizon=0.25):
         """Behavior reference only: actual rows no later than each future target."""

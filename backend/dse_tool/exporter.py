@@ -16,6 +16,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from .dataset import Dataset, content_fingerprint
 from .schema import digest, head_spec, semantic_errors
+from .history import HistoryConfig
 
 
 def write_json(path, obj):
@@ -36,7 +37,35 @@ class Exporter:
         self.cancels = {}
         self.threads = {}
 
-    def start(self, dataset, fingerprint, destination, key_ratio=0.7):
+    def start(
+        self,
+        dataset,
+        fingerprint,
+        destination,
+        key_ratio=0.7,
+        *,
+        history_config=None,
+        history_context_seconds=None,
+    ):
+        history_config = HistoryConfig.from_dict(history_config)
+        history_context_seconds = (
+            history_config.horizon_seconds
+            if history_context_seconds is None
+            else history_context_seconds
+        )
+        if not history_config.horizon_seconds <= history_context_seconds <= 3600:
+            raise ValueError("导出前史须不小于所选历史跨度，且不超过3600秒")
+        parent_manifest = dataset.root / "annotations/manifest.json"
+        if parent_manifest.exists():
+            available = (
+                json.loads(parent_manifest.read_text())
+                .get("context_seconds", {})
+                .get("history", 0.6)
+            )
+            if history_context_seconds > available + 1e-8:
+                raise ValueError(
+                    f"当前来源仅保留{available}秒前史；请从原始数据重新导出"
+                )
         target = Path(destination).expanduser().resolve()
         source = dataset.root
         if (
@@ -93,6 +122,8 @@ class Exporter:
                 job,
                 cancel,
                 schema_history,
+                history_config,
+                history_context_seconds,
             ),
             daemon=True,
         )
@@ -112,7 +143,15 @@ class Exporter:
         job,
         cancel,
         schema_history=None,
+        history_config=None,
+        history_context_seconds=None,
     ):
+        history_config = HistoryConfig.from_dict(history_config)
+        history_context_seconds = (
+            history_config.horizon_seconds
+            if history_context_seconds is None
+            else history_context_seconds
+        )
         temporary = target.parent / ("." + target.name + ".partial-" + job["id"])
         begun = time.perf_counter()
 
@@ -201,7 +240,19 @@ class Exporter:
                 times = np.asarray([r["timestamp"] for r in rows])
                 start = s["start"]
                 end = s["end"]
-                low = int(np.searchsorted(times, times[start] - 0.6 - 1e-8))
+                # Retain the floor row too, so irregular timestamps still support
+                # exactly the same at-or-before sample after independent export.
+                low = max(
+                    0,
+                    int(
+                        np.searchsorted(
+                            times,
+                            times[start] - history_context_seconds + 1e-8,
+                            side="right",
+                        )
+                        - 1
+                    ),
+                )
                 high = int(
                     np.searchsorted(times, times[end - 1] + 0.25 + 1e-8, side="right")
                 )
@@ -296,13 +347,24 @@ class Exporter:
                                 summary["counts"][count_key] = (
                                     summary["counts"].get(count_key, 0) + 1
                                 )
-                    is_history = j < len(selected_rows) - 1 and any(
-                        start <= i < end
-                        and times[i] - 0.6 - 1e-8 <= times[low + j] <= times[i] + 1e-8
-                        for i in range(
-                            max(start, low + j + 1),
-                            min(end, low + j + int(info["fps"]) + 1),
-                        )
+                    next_center = max(start, low + j + 1)
+                    earliest_history = max(
+                        0,
+                        int(
+                            np.searchsorted(
+                                times,
+                                times[min(next_center, end - 1)]
+                                - history_context_seconds
+                                + 1e-8,
+                                side="right",
+                            )
+                            - 1
+                        ),
+                    )
+                    is_history = (
+                        history_context_seconds > 0
+                        and next_center < end
+                        and low + j >= earliest_history
                     )
                     is_future = low + j >= end
                     samples.append(
@@ -675,7 +737,11 @@ class Exporter:
                     "source_dataset_fingerprints": sorted(
                         {r["source_dataset_fingerprint"] for r in source_map}
                     ),
-                    "context_seconds": {"history": 0.6, "review": 0.25},
+                    "context_seconds": {
+                        "history": history_context_seconds,
+                        "review": 0.25,
+                    },
+                    "history_sampling": history_config.to_dict(),
                     "selections": selections,
                     "sampling": {"key_ratio": key_ratio, "group_first": True},
                     "encoding": {

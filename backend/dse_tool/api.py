@@ -28,6 +28,15 @@ from .schema import (
     prepare_schema,
 )
 from .assist import event_candidates, adviser_candidate
+from .history import HistoryConfig
+
+
+class HistorySettings(BaseModel):
+    horizon_seconds: float = Field(default=0.6, ge=0, le=3600, allow_inf_nan=False)
+    num_frames: int = Field(default=4, ge=1, le=32, strict=True)
+
+    def config(self):
+        return HistoryConfig(**self.model_dump())
 
 
 class ImportRequest(BaseModel):
@@ -49,6 +58,7 @@ class AnnotationRequest(BaseModel):
     preview: bool = False
     label_source: Literal["human", "rule_suggestion", "test_fixture"] = "human"
     provenance: dict = Field(default_factory=dict)
+    history_config: HistorySettings | None = None
 
 
 class AnnotationFocus(BaseModel):
@@ -77,6 +87,10 @@ class ExportRequest(BaseModel):
     dataset: str
     destination: str
     key_ratio: float = Field(default=0.7, ge=0, le=1)
+    history_config: HistorySettings = Field(default_factory=HistorySettings)
+    history_context_seconds: float | None = Field(
+        default=None, ge=0, le=3600, allow_inf_nan=False
+    )
 
 
 class ReviewRequest(BaseModel):
@@ -398,6 +412,8 @@ def create_app(work_root):
         return {
             "fingerprint": fingerprint,
             "info": ds.info,
+            "history_sampling": ds.history_sampling,
+            "history_context_seconds": ds.history_capacity,
             "report": report,
             "episodes": episode_summary(fingerprint, ds),
         }
@@ -408,6 +424,8 @@ def create_app(work_root):
         return {
             "fingerprint": key,
             "root": str(ds.root),
+            "history_sampling": ds.history_sampling,
+            "history_context_seconds": ds.history_capacity,
             "info": ds.info,
             "report": json.loads(
                 store.db.execute(
@@ -425,11 +443,15 @@ def create_app(work_root):
         mode: Literal["state", "behavior"] = "state",
         request_id: int = 0,
         future_horizon: float = Query(default=0.25, ge=0.25, le=10),
+        history_horizon: float = Query(default=0.6, ge=0, le=3600),
+        history_frames: int = Query(default=4, ge=1, le=32),
     ):
         ds = get_dataset(key)
         bounds(ds, episode, frame, frame + 1)
         rows = ds.rows(episode)
-        history = ds.history(episode, frame)
+        history_config = HistoryConfig(history_horizon, history_frames)
+        history_samples = ds.history_samples(episode, frame, history_config)
+        history = [r["frame"] for r in history_samples]
         source, sf, group = ds.source_key(episode, frame, key)
         if mode == "behavior":
             with store.lock:
@@ -474,13 +496,8 @@ def create_app(work_root):
             "request_id": request_id,
             "frame": frame,
             "timestamp": rows[frame]["timestamp"],
-            "history": [
-                {
-                    "frame": i,
-                    "timestamp": rows[i]["timestamp"] if i is not None else None,
-                }
-                for i in history
-            ],
+            "history": history_samples,
+            "history_config": history_config.to_dict(),
             "future": ds.future(episode, frame, future_horizon)
             if mode == "behavior"
             else [],
@@ -576,8 +593,16 @@ def create_app(work_root):
             body.point,
             body.preview,
             body.label_source,
-            body.provenance,
+            annotation_provenance(body),
         )
+
+    def annotation_provenance(body):
+        provenance = dict(body.provenance)
+        if body.mode == "state":
+            provenance["history_config"] = (
+                body.history_config.config() if body.history_config else HistoryConfig()
+            ).to_dict()
+        return provenance
 
     @app.post("/api/annotations/batch")
     def annotate_batch(body: BatchAnnotationRequest):
@@ -603,7 +628,7 @@ def create_app(work_root):
                     confirmed=item.confirmed,
                     point=item.point,
                     label_source=item.label_source,
-                    provenance=item.provenance,
+                    provenance=annotation_provenance(item),
                 )
             )
         focus = None
@@ -835,7 +860,14 @@ def create_app(work_root):
                 or root.is_relative_to(target)
             ):
                 raise ValueError("导出不得与已登记来源目录重叠")
-        return exporter.start(ds, body.dataset, body.destination, body.key_ratio)
+        return exporter.start(
+            ds,
+            body.dataset,
+            body.destination,
+            body.key_ratio,
+            history_config=body.history_config.config(),
+            history_context_seconds=body.history_context_seconds,
+        )
 
     @app.get("/api/jobs/{job_id}")
     def job(job_id: str):

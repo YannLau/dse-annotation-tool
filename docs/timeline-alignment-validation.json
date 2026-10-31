@@ -1,0 +1,61 @@
+{
+  "checks": [
+    {
+      "bar_start_x": 501.2265625,
+      "error_pixels": 0.0016254194630960228,
+      "frames": "1",
+      "horizon": "0",
+      "max": "298",
+      "min": "0",
+      "thumb_x": 501.2281879194631,
+      "value": "90"
+    },
+    {
+      "bar_start_x": 501.2265625,
+      "error_pixels": 0.0016254194630960228,
+      "frames": "4",
+      "horizon": "0.6",
+      "max": "298",
+      "min": "0",
+      "thumb_x": 501.2281879194631,
+      "value": "90"
+    },
+    {
+      "bar_start_x": 501.2265625,
+      "error_pixels": 0.0016254194630960228,
+      "frames": "3",
+      "horizon": "5",
+      "max": "298",
+      "min": "0",
+      "thumb_x": 501.2281879194631,
+      "value": "90"
+    },
+    {
+      "bar_start_x": 622,
+      "error_pixels": 0,
+      "frames": "3",
+      "horizon": "5",
+      "max": "120",
+      "min": "60",
+      "thumb_x": 622,
+      "value": "90"
+    }
+  ],
+  "edges": {
+    "startEdge": {
+      "axis_x": 317,
+      "max": "298",
+      "min": "0",
+      "thumb_x": 317,
+      "value": "0"
+    },
+    "endEdge": {
+      "axis_x": 927,
+      "max": "298",
+      "min": "0",
+      "thumb_x": 927,
+      "value": "298"
+    }
+  },
+  "source": "真实 AV1 三相机，仅在独立 QA 工作库创建训练选区；未写语义标签"
+}
