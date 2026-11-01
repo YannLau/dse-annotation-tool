@@ -1,0 +1,56 @@
+{
+  "date": "2026-11-01",
+  "frontend_build": "passed",
+  "backend_tests": {
+    "passed": 41
+  },
+  "synthetic_browser": {
+    "slow_camera_keeps_snapshot": true,
+    "cached_images_fresh_labels_correct_write_frame": true,
+    "rapid_seek_probe": {
+      "samples": 51,
+      "blank": 0,
+      "mixed": 0,
+      "overlay": 0
+    },
+    "media_error_preserves_picture_and_locks_writes": true,
+    "state_mode_hides_future_and_enlarged_future": true,
+    "keyboard_and_scrubber_navigation": true,
+    "episode_switch_missing_history_single_frame_history": true,
+    "playback_stops_on_aligned_integer_frame": 11,
+    "same_frame_different_dataset_isolation": true,
+    "page_errors": []
+  },
+  "real_browser": {
+    "source": "LeRobot v2.1 example, episode 0, AV1 640x480, three cameras",
+    "step_times": [
+      {
+        "frame": 151,
+        "ms": 136
+      },
+      {
+        "frame": 152,
+        "ms": 117
+      },
+      {
+        "frame": 153,
+        "ms": 134
+      },
+      {
+        "frame": 150,
+        "ms": 33
+      }
+    ],
+    "playback_seconds": 3,
+    "playback_start_frame": 150,
+    "playback_stop_frame": 240,
+    "probe": {
+      "samples": 217,
+      "blank": 0,
+      "mixed": 0,
+      "changes": 44,
+      "last": 240
+    },
+    "page_errors": []
+  }
+}

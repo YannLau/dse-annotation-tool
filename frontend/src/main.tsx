@@ -13,7 +13,14 @@ import {
 import "./style.css";
 import ExportInspector from "./ExportInspector";
 import DirectoryPicker from "./DirectoryPicker";
+import { FrameImageCache } from "./frameImages";
 type Obj = Record<string, any>;
+type FrameSnapshot = {
+  context: string;
+  request: string;
+  view: Obj;
+  images: Record<string, string>;
+};
 async function api(path: string, body?: any, signal?: AbortSignal) {
   const response = await fetch("/api" + path, {
     method: body === undefined ? "GET" : "POST",
@@ -716,9 +723,12 @@ function App() {
     [frame, setFrame] = useState(0),
     [mode, setMode] = useState("state"),
     [page, setPage] = useState("work"),
-    [view, setView] = useState<Obj | null>(null),
-    [images, setImages] = useState<Obj>({}),
-    [loading, setLoading] = useState(false),
+    [snapshot, setSnapshot] = useState<FrameSnapshot | null>(null),
+    [loadStatus, setLoadStatus] = useState<{
+      request: string;
+      state: "loading" | "ready" | "error";
+    } | null>(null),
+    [choosing, setChoosing] = useState(false),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState("就绪"),
     [error, setError] = useState(""),
@@ -748,7 +758,7 @@ function App() {
     [speed, setSpeed] = useState(1),
     [tracks, setTracks] = useState<string[]>([]),
     [zoom, setZoom] = useState<[number, number] | null>(null),
-    [modal, setModal] = useState<string | null>(null),
+    [modal, setModal] = useState<{ src: string; context: string } | null>(null),
     [scale, setScale] = useState(1),
     [pan, setPan] = useState([0, 0]),
     [job, setJob] = useState<Obj | null>(null),
@@ -788,6 +798,8 @@ function App() {
     });
   const playbackClock = useRef({ frame: 0, time: 0 }),
     requestVersion = useRef(0),
+    choiceVersion = useRef(0),
+    imageCache = useRef(new FrameImageCache()),
     pendingWrites = useRef(0),
     initial = useRef(false),
     latestFrame = useRef(frame);
@@ -818,13 +830,37 @@ function App() {
   useEffect(() => {
     if (zoom && (frame < zoom[0] || frame > zoom[1])) setZoom(null);
   }, [frame, zoom]);
+  // Only retain a previous frame inside the same dataset and evidence window.
+  // The picture captions use the displayed frame; writes use the requested one
+  // and stay disabled until that exact request has been committed.
+  const evidenceContext = JSON.stringify([
+    datasetKey,
+    episode,
+    mode,
+    historyConfig.horizon_seconds,
+    historyConfig.num_frames,
+    mode === "behavior" ? futureHorizon : null,
+  ]);
+  const frameRequest = JSON.stringify([evidenceContext, frame, refresh]);
+  const loading =
+    !!datasetKey &&
+    (loadStatus?.request !== frameRequest || loadStatus.state === "loading");
+  const visibleSnapshot =
+    snapshot?.context === evidenceContext ? snapshot : null;
+  const view = visibleSnapshot?.view ?? null;
+  const images = visibleSnapshot?.images ?? {};
+  const displayedFrame = view?.frame ?? frame;
+  const visibleModal = modal?.context === evidenceContext ? modal.src : null;
   const aligned =
-    !!view &&
-    !loading &&
-    view.frame === frame &&
-    view.evidence_mode === mode &&
-    view.history_config?.horizon_seconds === historyConfig.horizon_seconds &&
-    view.history_config?.num_frames === historyConfig.num_frames;
+    !!visibleSnapshot &&
+    loadStatus?.request === frameRequest &&
+    loadStatus.state === "ready" &&
+    !choosing &&
+    visibleSnapshot.request === frameRequest;
+  useEffect(() => {
+    setModal(null);
+  }, [evidenceContext]);
+  useEffect(() => () => imageCache.current.clear(), []);
   const completionContext = JSON.stringify([
     datasetKey,
     episode,
@@ -944,10 +980,12 @@ function App() {
     return p;
   }
   async function choose(key: string, e = 0, f = 0, restoreHistory = false) {
+    const version = ++choiceVersion.current;
     try {
-      setLoading(true);
+      setChoosing(true);
       setPlaying(false);
       const d = await api("/datasets/" + key);
+      if (version !== choiceVersion.current) return;
       setDataset(d);
       if (d.history_sampling && !restoreHistory) {
         const config = {
@@ -977,11 +1015,13 @@ function App() {
       setDatasetKey(key);
       setEpisode(e);
       setFrame(f);
+      setRefresh((value) => value + 1);
       setZoom(null);
       setRange([f, f + 1]);
     } catch (e) {
-      fail(e);
-      setLoading(false);
+      if (version === choiceVersion.current) fail(e);
+    } finally {
+      if (version === choiceVersion.current) setChoosing(false);
     }
   }
   useEffect(() => {
@@ -1082,18 +1122,17 @@ function App() {
     if (!datasetKey) return;
     const version = ++requestVersion.current,
       controller = new AbortController();
-    setLoading(true);
+    setLoadStatus({ request: frameRequest, state: "loading" });
     setError("");
     setConfirmed(false);
-    let blobs: string[] = [];
-    const timer = setTimeout(async () => {
+    const timer = requestAnimationFrame(async () => {
       try {
         const v = await api(
           `/window/${datasetKey}/${episode}/${frame}?mode=${mode}&request_id=${version}&future_horizon=${futureHorizon}&history_horizon=${historyConfig.horizon_seconds}&history_frames=${historyConfig.num_frames}`,
           undefined,
           controller.signal,
         );
-        const nextImages: Obj = {};
+        const nextImages: Record<string, string> = {};
         await Promise.all(
           [
             ...v.history.map((h: Obj, t: number) => ({
@@ -1110,47 +1149,38 @@ function App() {
             if (h.frame === null) return;
             await Promise.all(
               v.cameras.map(async (_: string, c: number) => {
-                const r = await fetch(
-                  `/api/frame/${datasetKey}/${episode}/${c}/${h.frame}?request_id=${version}`,
-                  { signal: controller.signal },
-                );
-                if (!r.ok) {
-                  const body = await r.json();
-                  throw Error(body.detail || "帧解码失败");
-                }
-                const blob = await r.blob();
-                if (
-                  controller.signal.aborted ||
-                  version !== requestVersion.current
-                )
-                  return;
-                const url = URL.createObjectURL(blob);
-                blobs.push(url);
-                nextImages[`${h.imageKey}:${c}`] = url;
+                nextImages[`${h.imageKey}:${c}`] =
+                  await imageCache.current.load(
+                    `/api/frame/${datasetKey}/${episode}/${c}/${h.frame}`,
+                    controller.signal,
+                  );
               }),
             );
           }),
         );
-        if (version !== requestVersion.current) return;
-        setView(v);
-        setImages(nextImages);
-        setLoading(false);
+        if (controller.signal.aborted || version !== requestVersion.current)
+          return;
+        setSnapshot({
+          context: evidenceContext,
+          request: frameRequest,
+          view: v,
+          images: nextImages,
+        });
+        setLoadStatus({ request: frameRequest, state: "ready" });
         setMessage("已同步 · 所有修改自动保存");
       } catch (e: any) {
         if (e.name !== "AbortError" && version === requestVersion.current) {
-          setImages({});
-          setView(null);
-          setLoading(false);
+          controller.abort();
+          setLoadStatus({ request: frameRequest, state: "error" });
           fail(e);
         }
       }
-    }, 70);
+    });
     return () => {
-      clearTimeout(timer);
+      cancelAnimationFrame(timer);
       controller.abort();
-      blobs.forEach(URL.revokeObjectURL);
     };
-  }, [datasetKey, episode, frame, mode, refresh, futureHorizon, historyConfig]);
+  }, [frameRequest]);
   useEffect(() => {
     if (playing)
       playbackClock.current = {
@@ -1160,28 +1190,34 @@ function App() {
   }, [playing, speed, datasetKey, episode]);
   useEffect(() => {
     if (!playing || !aligned) return;
-    const id = setTimeout(() => {
-      if (frame >= n - 1) {
-        setPlaying(false);
-        return;
-      }
-      setFrame(
-        Math.min(
-          n - 1,
-          Math.max(
-            frame + 1,
-            playbackClock.current.frame +
-              Math.floor(
-                ((performance.now() - playbackClock.current.time) / 1000) *
-                  fps *
-                  speed,
-              ),
+    const clock = playbackClock.current;
+    const nextTime =
+      clock.time + ((frame - clock.frame + 1) * 1000) / (fps * speed);
+    const id = setTimeout(
+      () => {
+        if (frame >= n - 1) {
+          setPlaying(false);
+          return;
+        }
+        setFrame(
+          Math.min(
+            n - 1,
+            Math.max(
+              frame + 1,
+              playbackClock.current.frame +
+                Math.floor(
+                  ((performance.now() - playbackClock.current.time) / 1000) *
+                    fps *
+                    speed,
+                ),
+            ),
           ),
-        ),
-      );
-    }, 80);
+        );
+      },
+      Math.max(0, nextTime - performance.now()),
+    );
     return () => clearTimeout(id);
-  }, [playing, aligned, frame, speed, n]);
+  }, [playing, aligned, frame, speed, n, fps]);
   useEffect(() => {
     if (!job || !["running", "queued"].includes(job.status)) return;
     const id = setInterval(
@@ -1820,28 +1856,31 @@ function App() {
                 t−5、t−2.5、t。改变证据窗口后请复核状态标签。
               </small>
             </div>
-            <div className={"camera-region " + (!aligned ? "unaligned" : "")}>
+            <div className="camera-region" aria-busy={loading || choosing}>
               <div className="current-cameras">
                 {(view?.cameras || Object.keys(names)).map(
                   (cam: string, c: number) => (
                     <div className="camera" key={cam}>
                       <div className="camera-label">
                         <span>{names[cam] || cam}</span>
-                        <span>t · #{frame}</span>
+                        <span>t · #{displayedFrame}</span>
                       </div>
-                      {images[`${currentStep}:${c}`] && aligned ? (
+                      {images[`${currentStep}:${c}`] ? (
                         <img
                           src={images[`${currentStep}:${c}`]}
-                          alt={`${names[cam] || cam} 当前帧 ${frame}`}
+                          alt={`${names[cam] || cam} 当前帧 ${displayedFrame}`}
                           onClick={() => {
-                            setModal(images[`${currentStep}:${c}`]);
+                            setModal({
+                              src: images[`${currentStep}:${c}`],
+                              context: evidenceContext,
+                            });
                             setScale(1);
                             setPan([0, 0]);
                           }}
                         />
                       ) : (
                         <div className="placeholder">
-                          {loading ? "精确同步中…" : "画面缺失"}
+                          {loading ? "加载画面…" : "画面缺失"}
                         </div>
                       )}
                     </div>
@@ -1862,7 +1901,7 @@ function App() {
                         ? "当前 t"
                         : `t − ${Number(historyOffsets[t].toFixed(3))}`}
                       <small>
-                        {aligned && view?.history[t]?.frame != null
+                        {view?.history[t]?.frame != null
                           ? `#${view?.history[t].frame} · ${view?.history[t].timestamp.toFixed(3)}s`
                           : "缺失 / mask 0"}
                       </small>
@@ -1874,18 +1913,23 @@ function App() {
                         <div className="history-label">{names[cam] || cam}</div>
                         {historySteps.map((t) => (
                           <div className="history-cell" key={t}>
-                            {aligned && images[`${t}:${c}`] ? (
+                            {images[`${t}:${c}`] ? (
                               <img
                                 alt={`${cam} 历史 ${t}`}
                                 src={images[`${t}:${c}`]}
                                 onClick={() => {
-                                  setModal(images[`${t}:${c}`]);
+                                  setModal({
+                                    src: images[`${t}:${c}`],
+                                    context: evidenceContext,
+                                  });
                                   setScale(1);
                                   setPan([0, 0]);
                                 }}
                               />
                             ) : (
-                              <span>{loading ? "同步中…" : "无有效历史"}</span>
+                              <span>
+                                {!view && loading ? "加载画面…" : "无有效历史"}
+                              </span>
                             )}
                           </div>
                         ))}
@@ -1894,16 +1938,11 @@ function App() {
                   )}
                 </div>
               </div>
-              {loading && (
-                <div className="loading-overlay">
-                  正在将相机对齐到源帧 #{frame} · 标签编辑暂时锁定
-                </div>
-              )}
             </div>
             {mode === "behavior" && (
               <section className="future-reference" aria-label="未来帧参考">
                 <div className="future-heading">
-                  <h3>未来动作参考 · 决策帧固定 #{frame}</h3>
+                  <h3>未来动作参考 · 决策帧固定 #{displayedFrame}</h3>
                   <label>
                     参考跨度
                     <select
@@ -1933,9 +1972,7 @@ function App() {
                         futureHorizon * [0.4, 0.8, 1][t]
                       ).toFixed(3)}
                       <small>
-                        {aligned &&
-                        view?.future?.[t]?.frame !== null &&
-                        view?.future?.[t]
+                        {view?.future?.[t]?.frame !== null && view?.future?.[t]
                           ? `#${view.future[t].frame} · ${view.future[t].timestamp.toFixed(3)}s`
                           : "未来不足 / mask 0"}
                       </small>
@@ -1947,19 +1984,24 @@ function App() {
                         <div className="history-label">{names[cam] || cam}</div>
                         {[0, 1, 2].map((t) => (
                           <div className="history-cell" key={t}>
-                            {aligned && images[`future:${t}:${c}`] ? (
+                            {images[`future:${t}:${c}`] ? (
                               <img
                                 alt={`${names[cam] || cam} 未来帧 ${view?.future?.[t]?.frame}`}
                                 src={images[`future:${t}:${c}`]}
                                 onClick={() => {
-                                  setModal(images[`future:${t}:${c}`]);
+                                  setModal({
+                                    src: images[`future:${t}:${c}`],
+                                    context: evidenceContext,
+                                  });
                                   setScale(1);
                                   setPan([0, 0]);
                                 }}
                               />
                             ) : (
                               <span>
-                                {loading ? "同步中…" : "无有效未来帧"}
+                                {!view && loading
+                                  ? "加载画面…"
+                                  : "无有效未来帧"}
                               </span>
                             )}
                           </div>
@@ -2379,7 +2421,9 @@ function App() {
               <div className="current-values">
                 {visibleTracks.map((t) => {
                   const [k, d] = t.split(":");
-                  const r = view?.telemetry.find((r: Obj) => r.frame === frame);
+                  const r = view?.telemetry.find(
+                    (r: Obj) => r.frame === displayedFrame,
+                  );
                   return (
                     <small key={t}>
                       {descriptor(t)} <b>{r?.[k]?.[+d]?.toFixed(5) ?? "—"}</b>
@@ -3239,7 +3283,7 @@ function App() {
           </div>
         </section>
       )}
-      {modal && (
+      {visibleModal && (
         <div className="modal" onClick={() => setModal(null)}>
           <button className="modal-close" onClick={() => setModal(null)}>
             关闭 ×
@@ -3255,7 +3299,7 @@ function App() {
           </div>
           <img
             draggable={false}
-            src={modal}
+            src={visibleModal}
             style={{
               transform: `translate(${pan[0]}px,${pan[1]}px) scale(${scale})`,
             }}

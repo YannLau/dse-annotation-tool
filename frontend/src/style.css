@@ -400,21 +400,6 @@ nav button {
   font-size: 10px;
   color: #5e738b;
 }
-.loading-overlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background: #09131fdd;
-  backdrop-filter: blur(3px);
-  border: 1px solid #29415c;
-  border-radius: 7px;
-  color: #90d9c8;
-  padding: 30px;
-  text-align: center;
-  pointer-events: none;
-}
 .timeline {
   --timeline-label-width: 58px;
   --timeline-gap: 12px;
