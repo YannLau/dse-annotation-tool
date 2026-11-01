@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import "./style.css";
 import ExportInspector from "./ExportInspector";
+import DirectoryPicker from "./DirectoryPicker";
 type Obj = Record<string, any>;
 async function api(path: string, body?: any, signal?: AbortSignal) {
   const response = await fetch("/api" + path, {
@@ -1229,6 +1230,8 @@ function App() {
   };
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement).closest("dialog[open], .directory-picker"))
+        return;
       if ((e.target as HTMLElement).matches("input,textarea")) return;
       const label = (e.target as HTMLElement).getAttribute("aria-label");
       if (label && schema && aligned && !busy) {
@@ -1622,6 +1625,13 @@ function App() {
             value={path}
             onChange={(e) => setPath(e.target.value)}
           />
+          <DirectoryPicker
+            value={path}
+            onChange={setPath}
+            purpose="import"
+            disabled={busy}
+            onBrowse={() => setPlaying(false)}
+          />
           <button className="primary" disabled={busy} onClick={importSource}>
             导入 / 重新绑定
           </button>
@@ -1657,7 +1667,7 @@ function App() {
             通过本机目录导入 LeRobot
             v2.1。三视角同步、左右臂独立标注，所有工作保存在本地 SQLite。
           </p>
-          <p>原始数据只读。上方填入目录后开始。</p>
+          <p>原始数据只读。上方选择文件夹或填入目录后开始。</p>
           {busy && <div className="loader">正在逐项校验…页面仍可操作</div>}
         </div>
       )}

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import "./inspector.css";
+import DirectoryPicker from "./DirectoryPicker";
 
 type Obj = Record<string, any>;
 const roles: Obj = {
@@ -220,6 +221,12 @@ export default function ExportInspector({
             required
           />
         </label>
+        <DirectoryPicker
+          value={path}
+          onChange={setPath}
+          purpose="inspect"
+          disabled={busy}
+        />
         <button className="primary" disabled={busy}>
           {busy ? "正在校验并读取实际文件…" : "打开并检查"}
         </button>

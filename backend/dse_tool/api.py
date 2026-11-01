@@ -31,6 +31,7 @@ from .assist import event_candidates, adviser_candidate
 from .history import HistoryConfig
 from .inspector import ExportInspector, clean
 from .review import review_labels
+from .filesystem import directories, pick_directory
 import uuid
 
 
@@ -44,6 +45,11 @@ class HistorySettings(BaseModel):
 
 class ImportRequest(BaseModel):
     path: str
+
+
+class DirectoryPickerRequest(BaseModel):
+    initial_path: str = ""
+    purpose: Literal["import", "inspect"] = "import"
 
 
 class AnnotationRequest(BaseModel):
@@ -276,6 +282,16 @@ def create_app(work_root):
                 }
             )
         return result
+
+    @app.get("/api/filesystem/directories")
+    def list_directories(
+        path: str = "", show_hidden: bool = False, initial: bool = False
+    ):
+        return directories(path, show_hidden, initial)
+
+    @app.post("/api/filesystem/pick-directory")
+    def select_directory(body: DirectoryPickerRequest):
+        return pick_directory(body.initial_path, body.purpose)
 
     def get_inspector(handle):
         with media_lock:

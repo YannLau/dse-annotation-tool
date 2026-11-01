@@ -1,0 +1,60 @@
+{
+  "date": "2026-11-01",
+  "backend_tests": "41 passed",
+  "frontend_build": "passed",
+  "native_backend_tests": "mocked subprocess: selected / cancelled / busy / failed / timeout / Tk fallback; no native UI interaction",
+  "browser_environment": "isolated QA project, native DISPLAY intentionally unset to exercise fallback",
+  "checks": [
+    {
+      "case": "native-unavailable-opens-browser",
+      "visible": true
+    },
+    {
+      "case": "import-path-returned",
+      "path": "/home/punk/yann_repo/paper_code_01/dse_annotation_tool/workspaces/inspector-overlap-demo/source"
+    },
+    {
+      "case": "cancel-keeps-import-path",
+      "path": "/home/punk/yann_repo/paper_code_01/dse_annotation_tool/workspaces/inspector-overlap-demo/source"
+    },
+    {
+      "case": "selected-source-imported",
+      "visible": true
+    },
+    {
+      "case": "filter-children",
+      "names": [
+        "▸synthetic-overlap-export→"
+      ]
+    },
+    {
+      "case": "inspect-path-returned",
+      "path": "/home/punk/yann_repo/paper_code_01/dse_annotation_tool/workspaces/inspector-overlap-demo/synthetic-overlap-export"
+    },
+    {
+      "case": "invalid-folder-disables-selection",
+      "disabled": true
+    },
+    {
+      "case": "cancel-clears-browser-error",
+      "errors": 0
+    },
+    {
+      "case": "selected-export-opened",
+      "verified": true
+    },
+    {
+      "case": "modal-tab-stays-in-dialog",
+      "inside": true
+    },
+    {
+      "case": "escape-closes-dialog",
+      "closed": true
+    },
+    {
+      "case": "browse-go-does-not-submit-inspector",
+      "unopened": true,
+      "verificationNotStarted": true
+    }
+  ]
+}

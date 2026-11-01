@@ -1,0 +1,140 @@
+.directory-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.directory-picker > button {
+  white-space: nowrap;
+}
+.directory-browser-link {
+  background: transparent;
+  border-color: transparent;
+  font-size: 11px;
+  color: #91a9c3;
+  padding: 5px;
+}
+.directory-picker-error {
+  color: #ffb8bb;
+}
+.directory-dialog {
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  padding: 22px;
+  border: 1px solid #47617d;
+  border-radius: 12px;
+  color: #dce7f4;
+  background: #101b29;
+  box-shadow: 0 22px 80px #0009;
+}
+.directory-dialog::backdrop {
+  background: #020912b8;
+}
+.directory-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.directory-heading strong {
+  font-size: 18px;
+}
+.directory-heading p {
+  margin: 6px 0 14px;
+  font-size: 12px;
+}
+.directory-heading > button {
+  font-size: 18px;
+  padding: 2px 10px;
+}
+.directory-path {
+  display: flex;
+  gap: 8px;
+}
+.directory-path input {
+  flex: 1;
+  font-family: ui-monospace, monospace;
+}
+.directory-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0;
+}
+.directory-tools label {
+  margin: 0 0 0 auto;
+  font-size: 12px;
+}
+.directory-filter {
+  width: 100%;
+  margin-bottom: 10px;
+}
+.directory-list {
+  min-height: 180px;
+  height: min(32vh, 320px);
+  overflow: auto;
+  border: 1px solid #2b3b51;
+  border-radius: 6px;
+  background: #0d1724;
+}
+.directory-list > button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  padding: 10px 14px;
+  background: transparent;
+}
+.directory-list > button > span:nth-child(2) {
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.directory-list > button > span:first-child {
+  color: #74e4c4;
+}
+.directory-list > button:hover,
+.directory-list > button:focus-visible {
+  background: #20354b;
+}
+.directory-list > p {
+  margin: 18px;
+}
+.directory-selection {
+  display: grid;
+  gap: 5px;
+  padding: 14px 0;
+}
+.directory-selection code {
+  overflow-wrap: anywhere;
+  color: #a8e6d5;
+}
+.directory-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.directory-notice {
+  color: #e6c985;
+  background: #302d20;
+  padding: 10px;
+  border-radius: 6px;
+}
+@media (max-width: 760px) {
+  .import-bar {
+    flex-wrap: wrap;
+  }
+  .import-bar > input {
+    min-width: 50%;
+  }
+  .inspect-open {
+    flex-wrap: wrap;
+  }
+  .inspect-open > label {
+    min-width: 100%;
+  }
+}
