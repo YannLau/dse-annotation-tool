@@ -11,7 +11,15 @@ cd /home/punk/yann_repo/paper_code_01/dse_annotation_tool
 ./scripts/run.sh --work ./workspaces/my-project
 ```
 
-打开 **http://127.0.0.1:8765**。默认仅绑定回环地址。`--work` 指定 SQLite、缓存、日志、备份目录；不同 schema 项目建议使用不同工作目录。`--port` 可指定其他端口。开发模式在另一个终端执行 `cd frontend && npm run dev`，访问 Vite 打印的本机地址。
+打开 **http://127.0.0.1:8765**。
+
+默认仅绑定回环地址。
+
+`--work` 指定 SQLite、缓存、日志、备份目录；不同 schema 项目建议使用不同工作目录。
+
+`--port` 可指定其他端口。
+
+开发模式在另一个终端执行 `cd frontend && npm run dev`，访问 Vite 打印的本机地址。
 
 首次安装或源码修改后的构建：
 
@@ -109,6 +117,10 @@ H=0、T=1 支持当前帧消融；T 包含当前，每时刻含全部三相机�
 适配器校验 annotations 校验和，并重新使用共享规则引擎校验 mask。稳定类别 ID 不必连续，训练分类头顺序见 head_spec 的 class_ids；需要时使用 `encode_class_targets` 转为交叉熵索引。若训练环境安装 PyTorch，可用 `to_torch_batch` 递归转换 NumPy 数组。
 
 `proprioception36(state, ee_pose_feedback, verified_config)` 提供18维state + 双臂各位置3维/旋转6维的接口。配置须明确 `verified=true, unit='m', frame='robot_base', transform=4×4刚体矩阵`；未验证会拒绝规范化，原始反馈仍可读取。该工具不训练模型、不改执行代码、不连接真机。裁剪集不是完整 VLA 动作块的自动替代。
+
+训练接入边界：图像尚未执行SigLIP processor归一化，36D转换须先筛选有效时刻，不能将padding的全零四元数当作真实输入。`training_statistics` 当前只统计指定训练来源的18D state中心帧，不自动生成完整36D统计或标准化输入。输入mask由后续网络执行、标签mask由损失函数执行。当前reader统一H/T并返回完整模态；纯图像/模态分支开关、混合H/T模型训练及变长collate均属于后续模型实现。详见 [训练规范与实现边界](../NOTES-Yann/innovation_research_handoff/DSE_OUTPUT_MODEL_TRAINING_SPEC_V1_2026-10-29.md)。
+
+2026-11-01 修正adviser候选：显著往返平移/旋转不再仅标记 `needs_review` 后保留确定的净方向/keep；受影响分量输出unknown，其他分量保留，规则版本为 `approved-displacement-2`。接受候选仍只保存草稿，不自动审核；已有草稿/标签不自动重写。
 
 ## 恢复与验证
 

@@ -33,6 +33,8 @@ experiment_history = reader.history_config.to_dict()
 
 DSE 网络与完整训练循环尚未实现；后续网络必须按 T 生成时序 token / attention mask，使用实际相对秒数编码，并将 H/T 与 checkpoint 一起保存。36D 本体转换已支持任意 T。
 
+2026-11-01 补充：每次导出统一一套默认H/T，每个reader的覆盖配置对所有中心统一生效；混合H/T训练需后续显式实现，不是当前batch接口的逐样本功能。纯图像等模态由训练端选择前向输入，reader目前仍返回完整观测。36D转换只接受有效实测四元数，须先过滤padding；训练模型实际执行存在性mask，损失函数执行标签mask。当前图像仅RGB `[0,1]`，checkpoint预处理和完整36D训练统计仍待接入。更短/更稀疏历史或更少模态的审核兼容性不会由reader自动判断。
+
 ## 验证
 
 - `./scripts/test.sh -q`：29 项通过，包含可变 T/跨度、当前帧消融、因果采样、padding、API 参数校验、审核 provenance、配置持久化、导出容量、搬移重开、旧版本兼容及训练张量。

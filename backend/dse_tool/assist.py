@@ -105,9 +105,10 @@ def adviser_candidate(rows, start, approved, phases, event_frames, config):
     dead = max(0.005, 3 * config.get("position_noise", 0))
     steps = np.diff(positions, axis=0)
     cancellation = np.sum(abs(steps), axis=0) - abs(delta)
+    ambiguous_axes = cancellation > dead
     values = {
-        axis: (0 if abs(d) < dead else 1 if d > 0 else 2)
-        for axis, d in zip(["x", "y", "z"], delta)
+        axis: (3 if ambiguous else 0 if abs(d) < dead else 1 if d > 0 else 2)
+        for axis, d, ambiguous in zip(["x", "y", "z"], delta, ambiguous_axes)
     }
     q0 = np.asarray(rows[start][key][3:])
     q1 = np.asarray(rows[stop][key][3:])
@@ -131,20 +132,16 @@ def adviser_candidate(rows, start, approved, phases, event_frames, config):
                 )
             )
         )
-    values["orientation"] = int(
-        angle > max(math.radians(5), 3 * config.get("angle_noise", 0))
-    )
+    angular_dead = max(math.radians(5), 3 * config.get("angle_noise", 0))
+    ambiguous_rotation = angular_path - angle > angular_dead
+    values["orientation"] = 2 if ambiguous_rotation else int(angle > angular_dead)
     return {
         "status": "suggestion",
         "values": values,
         "start": start,
         "end": stop + 1,
         "duration": rows[stop]["timestamp"] - rows[start]["timestamp"],
-        "needs_review": bool(
-            np.any(cancellation > dead)
-            or angular_path - angle
-            > max(math.radians(5), 3 * config.get("angle_noise", 0))
-        ),
-        "rule_version": "approved-displacement-1",
+        "needs_review": bool(np.any(ambiguous_axes) or ambiguous_rotation),
+        "rule_version": "approved-displacement-2",
         "coordinate_config": config,
     }
