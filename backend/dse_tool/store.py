@@ -263,8 +263,11 @@ class Store:
         preview=False,
         label_source="human",
         provenance=None,
+        point_policy="preserve",
         _defer_review_validation=False,
     ):
+        if point_policy not in {"preserve", "overwrite"}:
+            raise ValueError("未知单帧覆盖策略")
         schema = self.schema()
         fm = field_map(schema)
         if field not in fm:
@@ -298,11 +301,27 @@ class Store:
             "SELECT COUNT(*) FROM annotations WHERE source=? AND arm=? AND field=? AND start<? AND end>?",
             (source, arm, field, end, start),
         ).fetchone()[0]
+        point_frames = set()
+        if not point:
+            for row in self.db.execute(
+                "SELECT start,end FROM annotations WHERE source=? AND arm=? AND field=? AND kind='point' AND start<? AND end>?",
+                (source, arm, field, end, start),
+            ):
+                point_frames.update(
+                    range(max(start, row["start"]), min(end, row["end"]))
+                )
+        overwritten_points = (
+            len(point_frames.intersection(eligible))
+            if point_policy == "overwrite"
+            else 0
+        )
         report = {
             "affected": len(eligible),
             "skipped": skipped,
             "needs_review": undetermined,
             "overlaps": overlaps,
+            "point_overrides": len(point_frames) - overwritten_points,
+            "overwritten_points": overwritten_points,
         }
         if preview:
             return report
@@ -328,6 +347,14 @@ class Store:
                     a,
                     b,
                 )
+                if not point and point_policy == "overwrite":
+                    self._split_write(
+                        "annotations",
+                        "source=? AND arm=? AND field=? AND kind='point'",
+                        (source, arm, field),
+                        a,
+                        b,
+                    )
                 self.db.execute(
                     "INSERT INTO annotations(source,start,end,arm,field,value,kind,status,mode,label_source,future_seen,version,revision,provenance) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
@@ -476,25 +503,6 @@ class Store:
                 reports = []
                 for index, change in ordered:
                     report = self.annotate(**change, _defer_review_validation=True)
-                    overrides = self.db.execute(
-                        "SELECT start,end FROM annotations WHERE source=? AND arm=? AND field=? AND kind='point' AND start<? AND end>?",
-                        (
-                            change["source"],
-                            change["arm"],
-                            change["field"],
-                            change["end"],
-                            change["start"],
-                        ),
-                    ).fetchall()
-                    report["point_overrides"] = (
-                        0
-                        if change.get("point")
-                        else sum(
-                            min(r["end"], change["end"])
-                            - max(r["start"], change["start"])
-                            for r in overrides
-                        )
-                    )
                     reports.append({"index": index, **report})
                 for change in changes:
                     if change.get("reviewed"):

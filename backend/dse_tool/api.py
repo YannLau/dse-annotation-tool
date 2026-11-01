@@ -64,6 +64,7 @@ class AnnotationRequest(BaseModel):
     reviewed: bool = False
     confirmed: bool = False
     point: bool = False
+    point_policy: Literal["preserve", "overwrite"] = "preserve"
     preview: bool = False
     label_source: Literal["human", "rule_suggestion", "test_fixture"] = "human"
     provenance: dict = Field(default_factory=dict)
@@ -736,6 +737,7 @@ def create_app(work_root):
             body.preview,
             body.label_source,
             annotation_provenance(body),
+            point_policy=body.point_policy,
         )
 
     def annotation_provenance(body):
@@ -769,6 +771,7 @@ def create_app(work_root):
                     reviewed=item.reviewed,
                     confirmed=item.confirmed,
                     point=item.point,
+                    point_policy=item.point_policy,
                     label_source=item.label_source,
                     provenance=annotation_provenance(item),
                 )

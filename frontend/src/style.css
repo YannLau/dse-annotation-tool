@@ -1205,14 +1205,16 @@ nav button {
   overflow-x: auto;
 }
 
-.review-scope {
+.review-scope,
+.range-point-policy {
   display: grid;
   gap: 6px;
   margin: 16px 0 8px;
   color: #9eb5d0;
   font-size: 11px;
 }
-.review-scope select {
+.review-scope select,
+.range-point-policy select {
   width: 100%;
 }
 .review-report {

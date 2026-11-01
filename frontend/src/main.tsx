@@ -741,7 +741,11 @@ function App() {
     [search, setSearch] = useState(""),
     [range, setRange] = useState<[number, number]>([0, 1]),
     [interval, setBatchInterval] = useState(false),
-    [batchDraft, setBatchDraft] = useState<Obj>({ version: 0, changes: [] }),
+    [batchDraft, setBatchDraft] = useState<Obj>({
+      version: 0,
+      point_policy: "preserve",
+      changes: [],
+    }),
     [preview, setPreview] = useState<Obj | null>(null),
     [previewLoading, setPreviewLoading] = useState(false),
     [futureHorizon, setFutureHorizon] = useState(0.25),
@@ -1075,7 +1079,7 @@ function App() {
         try {
           const saved = localStorage.getItem("dse-batch-draft:" + p.work_root);
           const restored = saved ? JSON.parse(saved) : pref.batchDraft;
-          if (restored?.changes?.length) setBatchDraft(restored);
+          if (Array.isArray(restored?.changes)) setBatchDraft(restored);
         } catch {
           /* Invalid local drafts never change saved annotations. */
         }
@@ -1342,7 +1346,9 @@ function App() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [frame, n, range, schema, aligned, busy, mode, interval]);
+  }, [frame, n, range, schema, aligned, busy, mode, interval, batchDraft]);
+  const pointPolicy =
+    batchDraft.point_policy === "overwrite" ? "overwrite" : "preserve";
   function annotation(
     arm: string,
     field: string,
@@ -1361,6 +1367,7 @@ function App() {
       reviewed,
       confirmed,
       point: !interval,
+      point_policy: interval ? pointPolicy : "preserve",
       history_config: historyConfig,
     };
   }
@@ -1442,6 +1449,7 @@ function App() {
           "point",
         ].every((key) => change[key] === body[key as keyof typeof body]);
       setBatchDraft((draft: Obj) => ({
+        ...draft,
         version: draft.changes.length ? draft.version : schema!.version,
         changes: [...draft.changes.filter((c: Obj) => !sameTarget(c)), body],
       }));
@@ -1450,7 +1458,11 @@ function App() {
     } else await mutate("/annotations", body);
   }
   function cancelBatch() {
-    setBatchDraft({ version: schema?.version || 0, changes: [] });
+    setBatchDraft((draft: Obj) => ({
+      ...draft,
+      version: schema?.version || 0,
+      changes: [],
+    }));
     setPreview(null);
     setPreviewLoading(false);
     notify("已取消整组草稿，已保存标签不变");
@@ -1461,7 +1473,11 @@ function App() {
       expected_schema_version: batchDraft.version,
     });
     if (result) {
-      setBatchDraft({ version: schema?.version || 0, changes: [] });
+      setBatchDraft((draft: Obj) => ({
+        ...draft,
+        version: schema?.version || 0,
+        changes: [],
+      }));
       setPreview(null);
       notify("整组标签已一次保存，可一次撤销整组");
     }
@@ -2519,6 +2535,37 @@ function App() {
                 ? `批量区间 [${range[0]}, ${range[1]})`
                 : `逐帧覆盖 · #${frame}`}
             </div>
+            {interval && (
+              <>
+                <label className="range-point-policy">
+                  区间赋值方式
+                  <select
+                    aria-label="区间赋值方式"
+                    disabled={busy}
+                    value={pointPolicy}
+                    onChange={(e) => {
+                      const policy = e.target.value;
+                      setBatchDraft((draft: Obj) => ({
+                        ...draft,
+                        point_policy: policy,
+                        changes: draft.changes.map((c: Obj) =>
+                          c.point ? c : { ...c, point_policy: policy },
+                        ),
+                      }));
+                      setPreviewLoading(batchDraft.changes.length > 0);
+                    }}
+                  >
+                    <option value="preserve">保留单帧例外</option>
+                    <option value="overwrite">统一覆盖，包括单帧</option>
+                  </select>
+                </label>
+                <p className="footnote">
+                  {pointPolicy === "overwrite"
+                    ? "本组区间赋值将覆盖所选字段的已有单帧标注（含 missing）；不适用帧仍跳过。"
+                    : "本组区间赋值保留所选字段的已有单帧标注。"}
+                </p>
+              </>
+            )}
             {[
               "left",
               "right",
@@ -2588,7 +2635,12 @@ function App() {
                         0,
                       )}
                       <br />
-                      保留逐帧覆盖{" "}
+                      将覆盖单帧标注{" "}
+                      {effectivePreview.reports.reduce(
+                        (n: number, r: Obj) => n + r.overwritten_points,
+                        0,
+                      )}{" "}
+                      个字段帧； 保留逐帧覆盖{" "}
                       {effectivePreview.reports.reduce(
                         (n: number, r: Obj) => n + r.point_overrides,
                         0,
