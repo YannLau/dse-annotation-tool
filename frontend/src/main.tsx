@@ -14,6 +14,8 @@ import "./style.css";
 import ExportInspector from "./ExportInspector";
 import DirectoryPicker from "./DirectoryPicker";
 import { FrameImageCache } from "./frameImages";
+import FloatingTimeline, { readPanelPosition } from "./FloatingTimeline";
+import type { PanelPosition } from "./FloatingTimeline";
 type Obj = Record<string, any>;
 type FrameSnapshot = {
   context: string;
@@ -755,6 +757,9 @@ function App() {
     [reviewLoading, setReviewLoading] = useState(false),
     [completionResult, setCompletionResult] = useState<Obj | null>(null),
     [playing, setPlaying] = useState(false),
+    [floatingTimelinePosition, setFloatingTimelinePosition] =
+      useState<PanelPosition | null>(null),
+    [floatingTimelineHeight, setFloatingTimelineHeight] = useState(0),
     [speed, setSpeed] = useState(1),
     [tracks, setTracks] = useState<string[]>([]),
     [zoom, setZoom] = useState<[number, number] | null>(null),
@@ -808,6 +813,18 @@ function App() {
     setError("");
     setMessage(s);
   };
+  function saveFloatingTimelinePosition(position: PanelPosition | null) {
+    setFloatingTimelinePosition(position);
+    try {
+      if (project?.work_root)
+        localStorage.setItem(
+          "dse-floating-timeline:" + project.work_root,
+          JSON.stringify(position),
+        );
+    } catch {
+      // SQLite preferences still save the position if browser storage is full.
+    }
+  }
   const fail = (e: any) => {
     setError(e.message || String(e));
     setPlaying(false);
@@ -1028,6 +1045,18 @@ function App() {
     loadProject()
       .then((p) => {
         const pref = p.preferences;
+        setFloatingTimelinePosition(
+          readPanelPosition(pref.floatingTimelinePosition),
+        );
+        try {
+          const saved = localStorage.getItem(
+            "dse-floating-timeline:" + p.work_root,
+          );
+          if (saved !== null)
+            setFloatingTimelinePosition(readPanelPosition(JSON.parse(saved)));
+        } catch {
+          // Fall back to the position saved in this workspace's preferences.
+        }
         if (pref.tracks) setTracks(pref.tracks);
         if (pref.mode) setMode(pref.mode);
         if (pref.taskSettings) setTaskSettings(pref.taskSettings);
@@ -1090,6 +1119,7 @@ function App() {
           futureHorizon,
           historyConfig,
           historyCapacity,
+          floatingTimelinePosition,
         }).catch(fail),
       400,
     );
@@ -1110,6 +1140,7 @@ function App() {
     futureHorizon,
     historyConfig,
     historyCapacity,
+    floatingTimelinePosition,
   ]);
   useEffect(() => {
     if (project?.work_root && initial.current)
@@ -1266,7 +1297,11 @@ function App() {
   };
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).closest("dialog[open], .directory-picker"))
+      if (
+        (e.target as HTMLElement).closest(
+          "dialog[open], .directory-picker, .floating-timeline-header",
+        )
+      )
         return;
       if ((e.target as HTMLElement).matches("input,textarea")) return;
       const label = (e.target as HTMLElement).getAttribute("aria-label");
@@ -1708,7 +1743,10 @@ function App() {
         </div>
       )}
       {dataset && page === "work" && (
-        <main className="workspace">
+        <main
+          className="workspace"
+          style={{ paddingBottom: floatingTimelineHeight + 32 }}
+        >
           <aside className="episodes">
             <div className="section-heading">
               EPISODES <span>{dataset.episodes.length}</span>
@@ -2012,7 +2050,12 @@ function App() {
                 </div>
               </section>
             )}
-            <div className="timeline">
+            <FloatingTimeline
+              key={project?.work_root}
+              position={floatingTimelinePosition}
+              onPositionChange={saveFloatingTimelinePosition}
+              onHeightChange={setFloatingTimelineHeight}
+            >
               <div className="transport">
                 <button aria-label="上一帧" onClick={() => navigate(-1)}>
                   ◀
@@ -2340,7 +2383,7 @@ function App() {
                 {range[1] - 1} · 导出前史 {historyCapacity}{" "}
                 秒，尾部复核最多0.25秒另行保留。
               </small>
-            </div>
+            </FloatingTimeline>
             <section className="telemetry">
               <div className="section-heading">
                 TELEMETRY <span>实测 / 命令具名轨道</span>
