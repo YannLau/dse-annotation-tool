@@ -2,6 +2,8 @@
 
 单人、本机运行的 React + TypeScript / FastAPI 应用。读取真实 Parquet 和 AV1 视频，提供三视角可配置历史同步浏览、左右臂独立区间标注、逐帧覆盖、schema 门控配置、动作复核和独立片段数据集导出。数据与标注留在本地；没有账号、CDN、云服务或模型 API。
 
+标注后新增哪些文件、各列含义及训练接入注意事项，见[《DSE 标注后 LeRobot v2.1 数据集说明书》](docs/ANNOTATED_DATASET_MANUAL_ZH.md)。
+
 ## 启动
 
 需要 Python 3.12、Node.js 20.19+/22.12+、uv、ffmpeg/ffprobe。已安装本项目独立环境及前端依赖，可直接运行：
