@@ -10,3 +10,4 @@ exports/
 *.tsbuildinfo
 .DS_Store
 datasets/
+reports/
