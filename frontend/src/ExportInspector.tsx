@@ -1,3 +1,4 @@
+import { t as tr, useI18n } from "./i18n";
 import React, { useEffect, useRef, useState } from "react";
 import "./inspector.css";
 import DirectoryPicker from "./DirectoryPicker";
@@ -11,11 +12,11 @@ const roles: Obj = {
 };
 const cameraName = (name: string) =>
   name.includes("high")
-    ? "顶视"
+    ? tr("顶视")
     : name.includes("left")
-      ? "左腕"
+      ? tr("左腕")
       : name.includes("right")
-        ? "右腕"
+        ? tr("右腕")
         : name;
 const raw = (value: any) =>
   value === null
@@ -40,13 +41,14 @@ async function request(path: string, body?: Obj, signal?: AbortSignal) {
   return value;
 }
 function RawTable({ value }: { value: Obj }) {
+  useI18n();
   return (
     <div className="inspect-table-scroll">
       <table className="inspect-table">
         <thead>
           <tr>
-            <th>Parquet 列名</th>
-            <th>实际保存的值</th>
+            <th>{tr("Parquet 列名")}</th>
+            <th>{tr("实际保存的值")}</th>
           </tr>
         </thead>
         <tbody>
@@ -70,6 +72,7 @@ export default function ExportInspector({
   initialPath: string;
   exports: Obj[];
 }) {
+  useI18n();
   const [path, setPath] = useState(initialPath),
     [reader, setReader] = useState<Obj | null>(null),
     [busy, setBusy] = useState(false),
@@ -195,14 +198,15 @@ export default function ExportInspector({
     <section className="export-inspector">
       <div className="inspect-heading">
         <div>
-          <span className="eyebrow">EXPORT LENS · 已保存的数据</span>
-          <h1>导出数据集检查器</h1>
+          <span className="eyebrow">{tr("EXPORT LENS · 已保存的数据")}</span>
+          <h1>{tr("导出数据集检查器")}</h1>
           <p>
-            直接查看磁盘上的视频与
-            Parquet。这里显示的是导出快照，不受当前标注草稿影响。
+            {tr(
+              "直接查看磁盘上的视频与 Parquet。这里显示的是导出快照，不受当前标注草稿影响。",
+            )}
           </p>
         </div>
-        <span className="inspect-readonly">只读检查</span>
+        <span className="inspect-readonly">{tr("只读检查")}</span>
       </div>
       <form
         className="inspect-open"
@@ -212,9 +216,9 @@ export default function ExportInspector({
         }}
       >
         <label>
-          导出目录
+          {tr("导出目录")}
           <input
-            aria-label="检查的导出目录"
+            aria-label={tr("检查的导出目录")}
             value={path}
             onChange={(e) => setPath(e.target.value)}
             placeholder="/path/to/export"
@@ -228,12 +232,12 @@ export default function ExportInspector({
           disabled={busy}
         />
         <button className="primary" disabled={busy}>
-          {busy ? "正在校验并读取实际文件…" : "打开并检查"}
+          {busy ? tr("正在校验并读取实际文件…") : tr("打开并检查")}
         </button>
       </form>
       {exports.length > 0 && (
         <div className="inspect-recent">
-          <span>已完成的导出：</span>
+          <span>{tr("已完成的导出：")}</span>
           {exports.map((j) => (
             <button
               key={j.id}
@@ -247,36 +251,42 @@ export default function ExportInspector({
       )}
       {error && (
         <p className="inspect-error" role="alert">
-          {error}
+          {tr(error)}
         </p>
       )}
       {!reader && !busy && (
         <div className="inspect-empty">
-          <h2>从文件目录，变成可以逐帧核对的地图</h2>
+          <h2>{tr("从文件目录，变成可以逐帧核对的地图")}</h2>
           <div className="inspect-intro">
             <article>
-              <b>01 · 哪些帧被保留？</b>
+              <b>{tr("01 · 哪些帧被保留？")}</b>
               <p>
-                训练中心、历史前缀和复核尾部用不同颜色显示；重叠副本放在同一源时间轴上比较。
+                {tr(
+                  "训练中心、历史前缀和复核尾部用不同颜色显示；重叠副本放在同一源时间轴上比较。",
+                )}
               </p>
             </article>
             <article>
-              <b>02 · Parquet 填了什么？</b>
+              <b>{tr("02 · Parquet 填了什么？")}</b>
               <p>
-                逐帧读取观测数值、null 标签、审核状态和 loss
-                mask，不用猜测文件含义。
+                {tr(
+                  "逐帧读取观测数值、null 标签、审核状态和 loss mask，不用猜测文件含义。",
+                )}
               </p>
             </article>
             <article>
-              <b>03 · 模型真正读到什么？</b>
+              <b>{tr("03 · 模型真正读到什么？")}</b>
               <p>
-                查看一个训练中心的历史抽帧、存在性 mask、分类目标与监督 mask。
+                {tr(
+                  "查看一个训练中心的历史抽帧、存在性 mask、分类目标与监督 mask。",
+                )}
               </p>
             </article>
           </div>
           <p>
-            请选择已导出的 LeRobot+DSE 目录。检查器不会导入标注、改 schema
-            或向数据集写入文件。
+            {tr(
+              "请选择已导出的 LeRobot+DSE 目录。检查器不会导入标注、改 schema 或向数据集写入文件。",
+            )}
           </p>
         </div>
       )}
@@ -284,68 +294,81 @@ export default function ExportInspector({
         <>
           <div className="inspect-root">
             <code>{reader.root}</code>
-            <span>文件校验和已通过</span>
+            <span>{tr("文件校验和已通过")}</span>
           </div>
           <div className="inspect-metrics">
             {[
-              [reader.total_rows, "导出帧记录"],
-              [reader.center_rows, "训练中心"],
-              [reader.total_rows - reader.center_rows, "仅上下文"],
-              [reader.unique_source_frames, "唯一源帧"],
-              [reader.duplicate_extra_rows, "重叠产生的额外副本"],
+              [reader.total_rows, tr("导出帧记录")],
+              [reader.center_rows, tr("训练中心")],
+              [reader.total_rows - reader.center_rows, tr("仅上下文")],
+              [reader.unique_source_frames, tr("唯一源帧")],
+              [reader.duplicate_extra_rows, tr("重叠产生的额外副本")],
             ].map(([value, label]) => (
-              <article key={label}>
+              <article key={tr(label)}>
                 <strong>{value.toLocaleString()}</strong>
-                <span>{label}</span>
+                <span>{tr(label)}</span>
               </article>
             ))}
           </div>
           <p className="inspect-task">
-            任务：{reader.tasks?.map((t: Obj) => t.task).join(" / ")}
+            {tr("任务：")}
+            {reader.tasks?.map((t: Obj) => t.task).join(" / ")}
           </p>
           <div className="inspect-contract">
             <b>
-              统一输入：{reader.history_config.horizon_seconds} 秒 /{" "}
-              {reader.history_config.num_frames} 时刻（含当前）
+              {tr("统一输入：")}
+              {reader.history_config.horizon_seconds}
+              {tr(" 秒 /")} {reader.history_config.num_frames}
+              {tr(" 时刻（含当前）")}
             </b>
             <span>
-              保留前史 {reader.context_seconds?.history ?? "未记录"} 秒 ·
-              尾部复核 {reader.context_seconds?.review ?? "未记录"} 秒
+              {tr("保留前史 ")}
+              {reader.context_seconds?.history ?? tr("未记录")}
+              {tr(" 秒 · 尾部复核 ")}
+              {reader.context_seconds?.review ?? tr("未记录")}
+              {tr(" 秒")}
             </span>
             <p>
-              视频与观测数值保留真实内容；标注在 labels.parquet
-              单独存放。上下文可以有旧标签，但在该副本中 loss mask 始终为 0。
+              {tr(
+                "视频与观测数值保留真实内容；标注在 labels.parquet 单独存放。上下文可以有旧标签，但在该副本中 loss mask 始终为 0。",
+              )}
             </p>
           </div>
           <section className="inspect-map">
-            <h2>① 看清片段与重叠</h2>
+            <h2>{tr("① 看清片段与重叠")}</h2>
             <div className="inspect-legend">
               {Object.entries(roles).map(([key, label]) => (
                 <span key={key}>
                   <i className={"inspect-role " + key} />
-                  {label}
+                  {tr(label)}
                 </span>
               ))}
               <span>
                 <i className="inspect-role duplicate" />
-                同一源帧的多个副本
+                {tr("同一源帧的多个副本")}
               </span>
             </div>
             <p>
-              每行是一个导出
-              episode，横向位置对应原始源帧。点击色块查看实际记录；不相邻的训练中心保留独立片段，重叠上下文分别保存。
+              {tr(
+                "每行是一个导出 episode，横向位置对应原始源帧。点击色块查看实际记录；不相邻的训练中心保留独立片段，重叠上下文分别保存。",
+              )}
             </p>
             {reader.source_groups.map((group: Obj) => (
               <div className="inspect-source" key={group.uuid}>
                 <h3>
-                  原始 EP {group.source_episode_index}{" "}
+                  {tr("原始 EP ")}
+                  {group.source_episode_index}{" "}
                   <small>
-                    源 UUID {group.uuid.slice(0, 12)}… · 数据指纹{" "}
-                    {group.fingerprint.slice(0, 10)}…
+                    {tr("源 UUID ")}
+                    {group.uuid.slice(0, 12)}
+                    {tr("… · 数据指纹")} {group.fingerprint.slice(0, 10)}…
                   </small>
                 </h3>
                 <div className="inspect-axis">
-                  <span>源帧 #{group.start}</span>
+                  <span>
+                    {tr("源帧 #")}
+                    {group.start}
+                  </span>
                   <span>#{group.end - 1}</span>
                 </div>
                 {group.lanes.map((lane: Obj) => (
@@ -361,7 +384,8 @@ export default function ExportInspector({
                         )
                       }
                     >
-                      导出 EP {lane.episode}
+                      {tr("导出 EP ")}
+                      {lane.episode}
                     </button>
                     <div>
                       {lane.runs.map((run: Obj, i: number) => (
@@ -372,11 +396,26 @@ export default function ExportInspector({
                             left: `${(100 * (run.source_start - group.start)) / (group.end - group.start)}%`,
                             width: `${(100 * (run.source_end - run.source_start)) / (group.end - group.start)}%`,
                           }}
-                          title={`${roles[run.role]} · 源帧 [${run.source_start},${run.source_end}) → 导出EP ${lane.episode} 本地帧 [${run.start},${run.end})`}
-                          aria-label={`查看导出EP ${lane.episode} ${roles[run.role]} 源帧 [${run.source_start},${run.source_end})`}
+                          title={tr(
+                            "{0} · 源帧 [{1},{2}) → 导出EP {3} 本地帧 [{4},{5})",
+                            [
+                              tr(roles[run.role]),
+                              run.source_start,
+                              run.source_end,
+                              lane.episode,
+                              run.start,
+                              run.end,
+                            ],
+                          )}
+                          aria-label={tr("查看导出EP {0} {1} 源帧 [{2},{3})", [
+                            lane.episode,
+                            tr(roles[run.role]),
+                            run.source_start,
+                            run.source_end,
+                          ])}
                           onClick={() => go(lane.episode, run.start, true)}
                         >
-                          {roles[run.role]}
+                          {tr(roles[run.role])}
                         </button>
                       ))}
                     </div>
@@ -386,32 +425,36 @@ export default function ExportInspector({
             ))}
             <div className="inspect-overlaps">
               <h3>
-                重叠帧对照{" "}
+                {tr("重叠帧对照")}{" "}
                 <small>
-                  {reader.repeated_source_frames} 个源帧出现多份记录
+                  {reader.repeated_source_frames}
+                  {tr(" 个源帧出现多份记录")}
                 </small>
               </h3>
               {reader.overlaps.length === 0 ? (
                 <p>
-                  当前导出没有源帧重复。若前史与其他片段重叠，这里会列出实际副本及各自角色。
+                  {tr(
+                    "当前导出没有源帧重复。若前史与其他片段重叠，这里会列出实际副本及各自角色。",
+                  )}
                 </p>
               ) : (
                 <>
                   <p>
-                    以下区间按真实 source_map
-                    匹配。点击副本即可对比它在各片段中的标签与 mask；同源副本的
-                    split_group 应相同。
+                    {tr(
+                      "以下区间按真实 source_map 匹配。点击副本即可对比它在各片段中的标签与 mask；同源副本的 split_group 应相同。",
+                    )}
                   </p>
                   {reader.overlaps.map((o: Obj, i: number) => (
                     <div className="inspect-overlap-row" key={i}>
                       <b>
-                        源 EP{" "}
+                        {tr("源 EP")}{" "}
                         {
                           reader.source_groups.find(
                             (g: Obj) => g.uuid === o.uuid,
                           )?.source_episode_index
                         }{" "}
-                        · 帧 [{o.start},{o.end})
+                        {tr("· 帧 [")}
+                        {o.start},{o.end})
                       </b>
                       <div>
                         {o.copies.map((c: Obj) => (
@@ -420,26 +463,30 @@ export default function ExportInspector({
                             className={"inspect-copy " + c.role}
                             onClick={() => go(c.episode, c.start, true)}
                           >
-                            EP {c.episode} / #{c.start} · {roles[c.role]}
+                            EP {c.episode} / #{c.start} · {tr(roles[c.role])}
                           </button>
                         ))}
                       </div>
                     </div>
                   ))}
                   {reader.overlap_group_count > reader.overlaps.length && (
-                    <p>这里只展示前200组；逐帧详情仍会列出该源帧的全部副本。</p>
+                    <p>
+                      {tr(
+                        "这里只展示前200组；逐帧详情仍会列出该源帧的全部副本。",
+                      )}
+                    </p>
                   )}
                 </>
               )}
             </div>
           </section>
           <section className="inspect-detail-section" ref={detailSection}>
-            <h2>② 点开一帧，核对保存值与训练输入</h2>
+            <h2>{tr("② 点开一帧，核对保存值与训练输入")}</h2>
             <div className="inspect-controls">
               <label>
-                导出 episode
+                {tr("导出 episode")}
                 <select
-                  aria-label="检查的导出episode"
+                  aria-label={tr("检查的导出episode")}
                   value={episode}
                   onChange={(e) => {
                     const ep = reader.episodes.find(
@@ -450,15 +497,18 @@ export default function ExportInspector({
                 >
                   {reader.episodes.map((e: Obj) => (
                     <option key={e.episode} value={e.episode}>
-                      EP {e.episode} · {e.length}帧 / {e.center_count}中心
+                      EP {e.episode} · {e.length}
+                      {tr("帧 / ")}
+                      {e.center_count}
+                      {tr("中心")}
                     </option>
                   ))}
                 </select>
               </label>
               <label>
-                本片段帧号
+                {tr("本片段帧号")}
                 <input
-                  aria-label="检查的本片段帧号"
+                  aria-label={tr("检查的本片段帧号")}
                   type="number"
                   min={0}
                   max={ep.length - 1}
@@ -478,24 +528,24 @@ export default function ExportInspector({
                 disabled={frame === 0}
                 onClick={() => go(episode, frame - 1)}
               >
-                上一帧
+                {tr("上一帧")}
               </button>
               <button
                 disabled={frame === ep.length - 1}
                 onClick={() => go(episode, frame + 1)}
               >
-                下一帧
+                {tr("下一帧")}
               </button>
               <button
                 disabled={ep.first_center === null}
                 onClick={() => go(episode, ep.first_center)}
               >
-                第一个训练中心
+                {tr("第一个训练中心")}
               </button>
             </div>
             <input
               className="inspect-slider"
-              aria-label="检查器帧游标"
+              aria-label={tr("检查器帧游标")}
               type="range"
               min={0}
               max={ep.length - 1}
@@ -511,10 +561,14 @@ export default function ExportInspector({
                     left: `${(100 * r.start) / ep.length}%`,
                     width: `${(100 * (r.end - r.start)) / ep.length}%`,
                   }}
-                  title={`${roles[r.role]} 本地[${r.start},${r.end})`}
+                  title={tr("{0} 本地[{1},{2})", [
+                    tr(roles[r.role]),
+                    r.start,
+                    r.end,
+                  ])}
                   onClick={() => go(episode, r.start)}
                 >
-                  {roles[r.role]}
+                  {tr(roles[r.role])}
                 </button>
               ))}
             </div>
@@ -522,17 +576,24 @@ export default function ExportInspector({
               <>
                 <div className={"inspect-frame-banner " + detail.summary.role}>
                   <b>
-                    {roles[detail.summary.role]} · 导出 EP {episode} / 帧 #
+                    {tr(roles[detail.summary.role])}
+                    {tr(" · 导出 EP ")}
+                    {episode}
+                    {tr(" / 帧 #")}
                     {frame}
                   </b>
                   <span>
-                    ← 原始 EP {detail.summary.source_episode_index} / 源帧 #
+                    {tr("← 原始 EP ")}
+                    {detail.summary.source_episode_index}
+                    {tr(" / 源帧 #")}
                     {detail.summary.source_frame} /{" "}
                     {detail.summary.source_timestamp.toFixed(3)}s
                   </span>
                   <span>
                     {detail.summary.valid_fields} / {detail.summary.label_count}{" "}
-                    字段计损失 · {detail.summary.copies} 份源帧副本
+                    {tr("字段计损失 · ")}
+                    {detail.summary.copies}
+                    {tr(" 份源帧副本")}
                   </span>
                 </div>
                 <div className="inspect-images">
@@ -542,15 +603,22 @@ export default function ExportInspector({
                         episode,
                         frame,
                         c,
-                        `检查 ${cameraName(name)} EP${episode} 帧${frame}`,
+                        tr("检查 {0} EP{1} 帧{2}", [
+                          cameraName(name),
+                          episode,
+                          frame,
+                        ]),
                       )}
-                      <figcaption>{cameraName(name)} · 实际导出视频</figcaption>
+                      <figcaption>
+                        {cameraName(name)}
+                        {tr(" · 实际导出视频")}
+                      </figcaption>
                     </figure>
                   ))}
                 </div>
                 {detail.equivalents.length > 1 && (
                   <div className="inspect-equivalents">
-                    <b>同一源帧的其他位置</b>
+                    <b>{tr("同一源帧的其他位置")}</b>
                     {detail.equivalents.map((copy: Obj) => (
                       <button
                         key={`${copy.episode}:${copy.frame}`}
@@ -561,27 +629,31 @@ export default function ExportInspector({
                         }
                         onClick={() => go(copy.episode, copy.frame)}
                       >
-                        EP{copy.episode} / #{copy.frame} · {roles[copy.role]} ·
-                        有效监督{copy.valid_fields}项
+                        EP{copy.episode} / #{copy.frame} ·{" "}
+                        {tr(roles[copy.role])}
+                        {tr(" · 有效监督")}
+                        {copy.valid_fields}
+                        {tr("项")}
                       </button>
                     ))}
                     <small>
-                      观测来自同一源帧；视频分别重编码，像素不保证完全相同。训练角色与监督
-                      mask 按各副本分别保存。
+                      {tr(
+                        "观测来自同一源帧；视频分别重编码，像素不保证完全相同。训练角色与监督 mask 按各副本分别保存。",
+                      )}
                     </small>
                   </div>
                 )}
                 {detail.comparisons?.length > 1 && (
                   <details className="inspect-comparison">
-                    <summary>并排对照同一源帧的各份标签</summary>
+                    <summary>{tr("并排对照同一源帧的各份标签")}</summary>
                     <div className="inspect-table-scroll">
                       <table className="inspect-table">
                         <thead>
                           <tr>
-                            <th>字段</th>
+                            <th>{tr("字段")}</th>
                             {detail.comparisons.map((c: Obj) => (
                               <th key={c.episode}>
-                                EP{c.episode} / #{c.frame} · {roles[c.role]}
+                                EP{c.episode} / #{c.frame} · {tr(roles[c.role])}
                               </th>
                             ))}
                           </tr>
@@ -618,7 +690,7 @@ export default function ExportInspector({
                                         · {value.review_status}
                                       </>
                                     ) : (
-                                      "无对应记录"
+                                      tr("无对应记录")
                                     )}
                                   </td>
                                 );
@@ -632,11 +704,11 @@ export default function ExportInspector({
                 )}
                 <div className="inspect-tabs" role="tablist">
                   {[
-                    ["labels", "标签与 loss mask"],
-                    ["data", "观测数据"],
-                    ["sample", "样本角色"],
-                    ["source_map", "来源映射"],
-                    ["training", "训练输入预览"],
+                    ["labels", tr("标签与 loss mask")],
+                    ["data", tr("观测数据")],
+                    ["sample", tr("样本角色")],
+                    ["source_map", tr("来源映射")],
+                    ["training", tr("训练输入预览")],
                   ].map(([key, label]) => (
                     <button
                       role="tab"
@@ -645,32 +717,31 @@ export default function ExportInspector({
                       key={key}
                       onClick={() => setTab(key)}
                     >
-                      {label}
+                      {tr(label)}
                     </button>
                   ))}
                 </div>
                 {tab === "labels" && (
                   <>
                     <div className="inspect-explanation">
-                      <b>实际文件：annotations/labels.parquet</b>
+                      <b>{tr("实际文件：annotations/labels.parquet")}</b>
                       <p>
-                        value_id 的 null 保持为 null；loader 将它转换为
-                        target=-100。unknown
-                        是真实类别，与缺失不同。表中的状态与 mask
-                        均为文件保存值；“原因”和 target 是阅读辅助。
+                        {tr(
+                          "value_id 的 null 保持为 null；loader 将它转换为 target=-100。unknown 是真实类别，与缺失不同。表中的状态与 mask 均为文件保存值；“原因”和 target 是阅读辅助。",
+                        )}
                       </p>
                       <label>
-                        手臂筛选
+                        {tr("手臂筛选")}
                         <select
-                          aria-label="检查标签手臂"
+                          aria-label={tr("检查标签手臂")}
                           value={arm}
                           onChange={(e) => setArm(e.target.value)}
                         >
                           {[
-                            ["all", "全部"],
-                            ["left", "左臂"],
-                            ["right", "右臂"],
-                            ["global", "全局"],
+                            ["all", tr("全部")],
+                            ["left", tr("左臂")],
+                            ["right", tr("右臂")],
+                            ["global", tr("全局")],
                           ].map(([a, l]) => (
                             <option key={a} value={a}>
                               {l}
@@ -685,13 +756,13 @@ export default function ExportInspector({
                           <tr>
                             <th>arm / field_id</th>
                             <th>value_id</th>
-                            <th>类别</th>
+                            <th>{tr("类别")}</th>
                             <th>annotation_status</th>
                             <th>applicability</th>
                             <th>review_status</th>
                             <th>loss mask</th>
                             <th>loader target</th>
-                            <th>原因</th>
+                            <th>{tr("原因")}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -733,7 +804,7 @@ export default function ExportInspector({
                                 <td>
                                   <code>{l.training_target}</code>
                                 </td>
-                                <td>{l.reason}</td>
+                                <td>{tr(l.reason)}</td>
                               </tr>
                             ))}
                         </tbody>
@@ -741,7 +812,9 @@ export default function ExportInspector({
                     </div>
                     <details>
                       <summary>
-                        查看本帧 labels.parquet 完整原始行（含 provenance）
+                        {tr(
+                          "查看本帧 labels.parquet 完整原始行（含 provenance）",
+                        )}
                       </summary>
                       <pre>
                         {JSON.stringify(
@@ -756,13 +829,14 @@ export default function ExportInspector({
                 {tab === "data" && (
                   <>
                     <div className="inspect-explanation">
-                      <b>实际文件：{detail.data_file}</b>
+                      <b>
+                        {tr("实际文件：")}
+                        {detail.data_file}
+                      </b>
                       <p>
-                        这是标准 LeRobot 观测/动作表；没有标注不代表
-                        state/action 被清零。视频不塞在这些数值列中，而是通过
-                        episode、帧与时间戳对应
-                        MP4。action/命令可以保存在导出文件中，但 DSE wrapper
-                        不把它们作为前向输入。
+                        {tr(
+                          "这是标准 LeRobot 观测/动作表；没有标注不代表 state/action 被清零。视频不塞在这些数值列中，而是通过 episode、帧与时间戳对应 MP4。action/命令可以保存在导出文件中，但 DSE wrapper 不把它们作为前向输入。",
+                        )}
                       </p>
                     </div>
                     <RawTable value={detail.data} />
@@ -771,10 +845,9 @@ export default function ExportInspector({
                 {tab === "sample" && (
                   <>
                     <p className="inspect-explanation">
-                      训练中心资格由 center_is_selected 决定；is_history_context
-                      可以与训练中心同时为
-                      true（它也可为后面的中心提供历史）。颜色优先显示“训练中心”，原始布尔值全部保留在下表。sampling_weight=0
-                      的帧不被加权抽样。
+                      {tr(
+                        "训练中心资格由 center_is_selected 决定；is_history_context 可以与训练中心同时为 true（它也可为后面的中心提供历史）。颜色优先显示“训练中心”，原始布尔值全部保留在下表。sampling_weight=0 的帧不被加权抽样。",
+                      )}
                     </p>
                     <RawTable value={detail.sample} />
                   </>
@@ -782,8 +855,9 @@ export default function ExportInspector({
                 {tab === "source_map" && (
                   <>
                     <p className="inspect-explanation">
-                      source_* 指向最初来源；parent_*
-                      指向本次导出的直接父集。即使独立片段中帧号重新从0开始，也能找到同一源帧。
+                      {tr(
+                        "source_* 指向最初来源；parent_* 指向本次导出的直接父集。即使独立片段中帧号重新从0开始，也能找到同一源帧。",
+                      )}
                     </p>
                     <RawTable value={detail.source_map} />
                   </>
@@ -792,11 +866,13 @@ export default function ExportInspector({
                   (detail.training.is_sample ? (
                     <>
                       <div className="inspect-explanation">
-                        <b>这个训练中心实际采样的历史</b>
+                        <b>{tr("这个训练中心实际采样的历史")}</b>
                         <p>
-                          图像形状 [{detail.training.image_shape.join(", ")}
-                          ]，RGB
-                          256×256；下方使用导出原视频展示取帧位置。只有当前中心的标签参与损失，历史帧的标签不会混作当前真值。
+                          {tr("图像形状 [")}
+                          {detail.training.image_shape.join(", ")}
+                          {tr(
+                            "]，RGB 256×256；下方使用导出原视频展示取帧位置。只有当前中心的标签参与损失，历史帧的标签不会混作当前真值。",
+                          )}
                         </p>
                       </div>
                       <div className="inspect-history">
@@ -804,28 +880,32 @@ export default function ExportInspector({
                           <article key={t}>
                             <h4>
                               {h.offset_seconds === 0
-                                ? "当前 t"
+                                ? tr("当前 t")
                                 : `t − ${Number(h.offset_seconds.toFixed(3))}s`}
                             </h4>
                             {h.frame === null ? (
                               <div className="inspect-padding">
-                                <b>缺失历史</b>
+                                <b>{tr("缺失历史")}</b>
                                 <p>
-                                  图像 / state / 末端置零
+                                  {tr("图像 / state / 末端置零")}
                                   <br />
                                   image mask = false
                                   <br />
                                   state mask = false
                                   <br />
-                                  实际时间 = NaN
+                                  {tr("实际时间 = NaN")}
                                 </p>
                               </div>
                             ) : (
                               <>
                                 <p>
-                                  本地 #{h.frame} ← 源 #{h.sample.source_frame}
+                                  {tr("本地 #")}
+                                  {h.frame}
+                                  {tr(" ← 源 #")}
+                                  {h.sample.source_frame}
                                   <br />
-                                  实际 Δt {h.relative_timestamp.toFixed(3)}s
+                                  {tr("实际 Δt ")}
+                                  {h.relative_timestamp.toFixed(3)}s
                                   <br />
                                   image mask = true · state mask = true
                                 </p>
@@ -836,13 +916,17 @@ export default function ExportInspector({
                                         episode,
                                         h.frame,
                                         c,
-                                        `训练输入 ${cameraName(name)} 历史时刻${t} 帧${h.frame}`,
+                                        tr("训练输入 {0} 历史时刻{1} 帧{2}", [
+                                          cameraName(name),
+                                          t,
+                                          h.frame,
+                                        ]),
                                       )}
                                     </div>
                                   ),
                                 )}
                                 <button onClick={() => go(episode, h.frame)}>
-                                  检查该历史帧记录
+                                  {tr("检查该历史帧记录")}
                                 </button>
                               </>
                             )}
@@ -851,30 +935,33 @@ export default function ExportInspector({
                       </div>
                       <details>
                         <summary>
-                          loader 输出的本中心分类 target 与 loss_masks
+                          {tr("loader 输出的本中心分类 target 与 loss_masks")}
                         </summary>
                         <pre>{JSON.stringify(detail.training, null, 2)}</pre>
                       </details>
                     </>
                   ) : (
                     <div className="inspect-padding">
-                      <h3>这一帧只是上下文，不单独产出训练样本</h3>
+                      <h3>{tr("这一帧只是上下文，不单独产出训练样本")}</h3>
                       <p>
-                        DSEDataset 只从 center_is_selected=true
-                        的中心取样。这帧可被某个中心读取为历史图像，但自身标签不计损失。
+                        {tr(
+                          "DSEDataset 只从 center_is_selected=true 的中心取样。这帧可被某个中心读取为历史图像，但自身标签不计损失。",
+                        )}
                       </p>
                       <button onClick={() => go(episode, ep.first_center ?? 0)}>
-                        查看本片段第一个训练中心的输入
+                        {tr("查看本片段第一个训练中心的输入")}
                       </button>
                     </div>
                   ))}
               </>
             ) : (
-              <div className="inspect-loading">正在读取这帧的文件记录…</div>
+              <div className="inspect-loading">
+                {tr("正在读取这帧的文件记录…")}
+              </div>
             )}
             <details className="inspect-row-browser">
               <summary>
-                展开本片段逐帧记录（samples + source_map + 标签统计）
+                {tr("展开本片段逐帧记录（samples + source_map + 标签统计）")}
               </summary>
               {table && (
                 <>
@@ -883,33 +970,36 @@ export default function ExportInspector({
                       disabled={offset === 0}
                       onClick={() => setOffset(Math.max(0, offset - 50))}
                     >
-                      前50行
+                      {tr("前50行")}
                     </button>
                     <span>
-                      行 {offset}–{Math.min(offset + 50, table.total) - 1} / 共
-                      {table.total}行
+                      {tr("行 ")}
+                      {offset}–{Math.min(offset + 50, table.total) - 1}
+                      {tr(" / 共")}
+                      {table.total}
+                      {tr("行")}
                     </span>
                     <button
                       disabled={offset + 50 >= table.total}
                       onClick={() => setOffset(offset + 50)}
                     >
-                      后50行
+                      {tr("后50行")}
                     </button>
                   </div>
                   <div className="inspect-table-scroll">
                     <table className="inspect-table">
                       <thead>
                         <tr>
-                          <th>本地帧</th>
-                          <th>源帧</th>
-                          <th>角色</th>
+                          <th>{tr("本地帧")}</th>
+                          <th>{tr("源帧")}</th>
+                          <th>{tr("角色")}</th>
                           <th>center</th>
                           <th>history</th>
                           <th>review</th>
-                          <th>有效字段数</th>
-                          <th>null标签数</th>
+                          <th>{tr("有效字段数")}</th>
+                          <th>{tr("null标签数")}</th>
                           <th>sampling_weight</th>
-                          <th>副本数</th>
+                          <th>{tr("副本数")}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -924,7 +1014,7 @@ export default function ExportInspector({
                               </button>
                             </td>
                             <td>#{r.source_frame}</td>
-                            <td>{roles[r.role]}</td>
+                            <td>{tr(roles[r.role])}</td>
                             <td>{String(r.center_is_selected)}</td>
                             <td>{String(r.is_history_context)}</td>
                             <td>{String(r.is_review_context)}</td>
@@ -942,10 +1032,11 @@ export default function ExportInspector({
             </details>
           </section>
           <section className="inspect-files">
-            <h2>③ 对照真实文件与列类型</h2>
+            <h2>{tr("③ 对照真实文件与列类型")}</h2>
             <p>
-              以下为目录内实际文件；展开 Parquet 文件可查看列名、类型及 nullable
-              属性。逐帧值通过上面的检查面板读取。
+              {tr(
+                "以下为目录内实际文件；展开 Parquet 文件可查看列名、类型及 nullable 属性。逐帧值通过上面的检查面板读取。",
+              )}
             </p>
             <div className="inspect-file-list">
               {reader.files.map((f: Obj) => (
@@ -954,7 +1045,7 @@ export default function ExportInspector({
                     <code>{f.path}</code>
                     <span>
                       {f.rows !== undefined
-                        ? `${f.rows.toLocaleString()} 行 · `
+                        ? tr("{0} 行 · ", [f.rows.toLocaleString()])
                         : ""}
                       {(f.bytes / 1024).toFixed(1)} KB
                     </span>
@@ -962,10 +1053,10 @@ export default function ExportInspector({
                   {!f.path.endsWith(".mp4") && (
                     <div className="inspect-file-preview">
                       <button
-                        aria-label={`预览文件 ${f.path}`}
+                        aria-label={tr("预览文件 {0}", [f.path])}
                         onClick={() => previewFile(f.path)}
                       >
-                        预览实际文件内容
+                        {tr("预览实际文件内容")}
                       </button>
                       {filePreview && filePreview.path === f.path && (
                         <>
@@ -981,15 +1072,18 @@ export default function ExportInspector({
                                     )
                                   }
                                 >
-                                  前20行
+                                  {tr("前20行")}
                                 </button>
                                 <span>
-                                  行{filePreview.offset}–
+                                  {tr("行")}
+                                  {filePreview.offset}–
                                   {Math.min(
                                     filePreview.offset + 20,
                                     filePreview.total,
                                   ) - 1}{" "}
-                                  / 共{filePreview.total}行
+                                  {tr("/ 共")}
+                                  {filePreview.total}
+                                  {tr("行")}
                                 </span>
                                 <button
                                   disabled={
@@ -999,7 +1093,7 @@ export default function ExportInspector({
                                     previewFile(f.path, filePreview.offset + 20)
                                   }
                                 >
-                                  后20行
+                                  {tr("后20行")}
                                 </button>
                               </>
                             )}
@@ -1022,8 +1116,8 @@ export default function ExportInspector({
                       <table className="inspect-table">
                         <thead>
                           <tr>
-                            <th>列名</th>
-                            <th>Arrow 类型</th>
+                            <th>{tr("列名")}</th>
+                            <th>{tr("Arrow 类型")}</th>
                             <th>nullable</th>
                           </tr>
                         </thead>
@@ -1040,10 +1134,10 @@ export default function ExportInspector({
                     </div>
                   ) : (
                     <p>
-                      此文件为
+                      {tr("此文件为")}
                       {f.path.endsWith(".mp4")
-                        ? "视频，可在上面的逐帧画面中查看"
-                        : "元数据或审核配置"}
+                        ? tr("视频，可在上面的逐帧画面中查看")
+                        : tr("元数据或审核配置")}
                       。
                     </p>
                   )}
@@ -1051,7 +1145,7 @@ export default function ExportInspector({
               ))}
             </div>
             <details>
-              <summary>查看实际 manifest.json</summary>
+              <summary>{tr("查看实际 manifest.json")}</summary>
               <pre>{JSON.stringify(reader.manifest, null, 2)}</pre>
             </details>
           </section>
@@ -1061,10 +1155,10 @@ export default function ExportInspector({
         <div
           className="inspect-image-modal"
           role="dialog"
-          aria-label="导出视频放大"
+          aria-label={tr("导出视频放大")}
         >
-          <button onClick={() => setImage(null)}>关闭大图</button>
-          <img src={image} alt="导出视频原帧放大" />
+          <button onClick={() => setImage(null)}>{tr("关闭大图")}</button>
+          <img src={image} alt={tr("导出视频原帧放大")} />
         </div>
       )}
     </section>

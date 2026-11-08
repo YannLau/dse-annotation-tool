@@ -1,0 +1,15 @@
+{
+  "date": "2026-11-08",
+  "python_regression_tests": 52,
+  "message_catalog_entries": 686,
+  "empty_page_and_document_language": true,
+  "schema_and_existing_server_reasons_switch": true,
+  "inspector_errors_and_folder_picker": true,
+  "frame_selection_drafts_schema_and_saved_labels_preserved": true,
+  "language_and_pending_drafts_survive_reload": true,
+  "completion_and_dynamic_backend_errors": true,
+  "calibration_export_and_user_text": true,
+  "inspector_state_and_responsive_language_selector": true,
+  "source_and_export_unchanged": true,
+  "browser_errors": []
+}

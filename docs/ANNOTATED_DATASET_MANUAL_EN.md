@@ -2,7 +2,7 @@
 
 English | [简体中文](ANNOTATED_DATASET_MANUAL_ZH.md)
 
-Date: 2026-11-03. Covers the `LeRobot-v2.1+DSE-1` export format of this `dse_annotation_tool` project; the implementation baseline checked was `9b1246f`. Actual exported files were also checked. This manual describes the current implementation. Later model, training, and protocol ideas in research documents are not automatically implemented features.
+Date: 2026-11-03; interface language and English display properties updated on 2026-11-08. Covers the `LeRobot-v2.1+DSE-1` export format of this `dse_annotation_tool` project; the original export-protocol baseline checked was `9b1246f`. Actual exported files were also checked. This manual describes the current implementation. Later model, training, and protocol ideas in research documents are not automatically implemented features.
 
 This manual is for annotators, recipients of exported data, and developers building DSE or VLA training programs. It explains what is added to the directory, what each field means, which labels can supervise training, which data is context only, and what training code must still handle.
 
@@ -256,7 +256,9 @@ Versions are local to a project. Two independent projects' v2 schemas need not m
 |---|---|---|
 | `field_id` | Stable identifier such as `holding` or `adviser.x` | Joins labels and model heads; not freely editable display text |
 | `label` | Display name | The field's UI name |
+| `label_en` | Optional English display name | Preferred in the English UI; does not change field_id |
 | `description` | Semantics and annotation instructions | What question the field asks |
+| `description_en` | Optional English description | Description in the English UI; the original Chinese description remains |
 | `scope` | `each_arm` or `global` | Separate answers per arm or one answer per frame |
 | `type` | Currently `categorical` | A finite category; category IDs are not continuous regression targets |
 | `classes` | Category-object list | Permitted answers; order also affects classification-head order |
@@ -277,6 +279,7 @@ The default use of `independent_when_missing` is holding: when phase is missing 
 | `id` | Stable integer identity within a field; the same number can mean different things in different fields |
 | `key` | Stable semantic machine name, such as `ready` or `unknown` |
 | `label_zh` | Chinese display text |
+| `label_en` | Optional English display text; built-in categories use UI translations when absent, while custom categories fall back to key |
 | `color` | UI color, not a training feature |
 | `shortcut` | UI shortcut, not a training feature |
 | `deprecated` | Optional deprecation flag; blocks new selections and requires checking historical review/version status |

@@ -60,6 +60,13 @@ def test_native_picker_selection_cancel_fallback_and_single_dialog(
     assert "导出" in next(arg for arg in command if arg.startswith("--title="))
     assert not options.get("shell") and options["timeout"] == 300
     assert not (tmp_path / "not-created").exists()
+    # The native window follows the UI language without changing selected paths.
+    assert filesystem.pick_directory(str(tmp_path), "inspect", "en")["path"] == str(
+        selected
+    )
+    assert "--title=Select an exported dataset folder to inspect" in calls[-1][0]
+    filesystem.pick_directory(str(tmp_path), "import", "en")
+    assert "--title=Select a dataset folder to import" in calls[-1][0]
 
     monkeypatch.setattr(
         filesystem.subprocess,
@@ -118,13 +125,30 @@ def test_directory_api_is_read_only_and_validates_access(tmp_path, monkeypatch):
         )
         monkeypatch.setattr(
             "dse_tool.api.pick_directory",
-            lambda path, purpose: {"status": "selected", "path": str(source)},
+            lambda path, purpose, language: {
+                "status": "selected",
+                "path": str(source),
+                "language": language,
+            },
         )
         selected = client.post(
             "/api/filesystem/pick-directory",
             json={"initial_path": "", "purpose": "inspect"},
         )
         assert selected.json()["path"] == str(source)
+        assert selected.json()["language"] == "zh-CN"
+        english = client.post(
+            "/api/filesystem/pick-directory",
+            json={"initial_path": str(source), "purpose": "inspect", "language": "en"},
+        )
+        assert english.json()["path"] == str(source)
+        assert english.json()["language"] == "en"
+        assert (
+            client.post(
+                "/api/filesystem/pick-directory", json={"language": "invalid"}
+            ).status_code
+            == 422
+        )
         assert (
             client.post(
                 "/api/filesystem/pick-directory", json={"purpose": "invalid"}

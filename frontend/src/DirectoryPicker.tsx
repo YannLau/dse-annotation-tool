@@ -1,3 +1,4 @@
+import { t as tr, useI18n } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import "./directory-picker.css";
@@ -38,6 +39,7 @@ export default function DirectoryPicker({
   disabled?: boolean;
   onBrowse?: () => void;
 }) {
+  const { language } = useI18n();
   const [open, setOpen] = useState(false);
   const [nativeBusy, setNativeBusy] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -116,7 +118,7 @@ export default function DirectoryPicker({
     try {
       const result = await request(
         "pick-directory",
-        { initial_path: value, purpose },
+        { initial_path: value, purpose, language },
         controller.signal,
       );
       if (controller.signal.aborted) return;
@@ -143,10 +145,10 @@ export default function DirectoryPicker({
           type="button"
           disabled={disabled || nativeBusy}
           onClick={pickNative}
-          aria-label={title}
+          aria-label={tr(title)}
         >
           <span aria-hidden="true">▣</span>{" "}
-          {nativeBusy ? "等待文件夹选择…" : "选择文件夹"}
+          {nativeBusy ? tr("等待文件夹选择…") : tr("选择文件夹")}
         </button>
         <button
           type="button"
@@ -154,15 +156,15 @@ export default function DirectoryPicker({
           disabled={disabled || nativeBusy}
           onClick={() => openBrowser()}
           aria-label={
-            "在页面内浏览" +
-            (purpose === "import" ? "导入目录" : "导出检查目录")
+            tr("在页面内浏览") +
+            (purpose === "import" ? tr("导入目录") : tr("导出检查目录"))
           }
         >
-          页面内浏览
+          {tr("页面内浏览")}
         </button>
         {error && !open && (
           <span className="directory-picker-error" role="alert">
-            {error}
+            {tr(error)}
           </span>
         )}
       </span>
@@ -170,7 +172,7 @@ export default function DirectoryPicker({
         <dialog
           ref={dialog}
           className="directory-dialog"
-          aria-label={title}
+          aria-label={tr(title)}
           onCancel={(event) => {
             event.preventDefault();
             setOpen(false);
@@ -183,12 +185,12 @@ export default function DirectoryPicker({
         >
           <div className="directory-heading">
             <div>
-              <strong>{title}</strong>
-              <p>进入数据集根目录后，点击“使用此文件夹”。</p>
+              <strong>{tr(title)}</strong>
+              <p>{tr("进入数据集根目录后，点击“使用此文件夹”。")}</p>
             </div>
             <button
               type="button"
-              aria-label="关闭文件夹浏览器"
+              aria-label={tr("关闭文件夹浏览器")}
               onClick={() => setOpen(false)}
             >
               ×
@@ -196,7 +198,7 @@ export default function DirectoryPicker({
           </div>
           {notice && (
             <p className="directory-notice" role="status">
-              {notice}
+              {tr(notice)}
             </p>
           )}
           <form
@@ -208,12 +210,12 @@ export default function DirectoryPicker({
             }}
           >
             <input
-              aria-label="文件夹浏览路径"
+              aria-label={tr("文件夹浏览路径")}
               value={path}
               onChange={(event) => setPath(event.target.value)}
-              placeholder="输入目录路径"
+              placeholder={tr("输入目录路径")}
             />
-            <button disabled={loading}>前往</button>
+            <button disabled={loading}>{tr("前往")}</button>
           </form>
           <div className="directory-tools">
             <button
@@ -221,14 +223,14 @@ export default function DirectoryPicker({
               disabled={loading || !listing?.parent}
               onClick={() => browse(listing!.parent!)}
             >
-              ↑ 上一级
+              {tr("↑ 上一级")}
             </button>
             <button
               type="button"
               disabled={loading}
               onClick={() => browse(listing?.home || "")}
             >
-              主目录
+              {tr("主目录")}
             </button>
             <label>
               <input
@@ -243,28 +245,28 @@ export default function DirectoryPicker({
                   );
                 }}
               />{" "}
-              显示隐藏文件夹
+              {tr("显示隐藏文件夹")}
             </label>
           </div>
           <input
             className="directory-filter"
-            aria-label="筛选当前目录的子文件夹"
-            placeholder="筛选子文件夹…"
+            aria-label={tr("筛选当前目录的子文件夹")}
+            placeholder={tr("筛选子文件夹…")}
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
           />
           {error && (
             <p className="directory-picker-error" role="alert">
-              {error}
+              {tr(error)}
             </p>
           )}
           <div
             className="directory-list"
-            aria-label="子文件夹"
+            aria-label={tr("子文件夹")}
             aria-busy={loading}
           >
             {loading ? (
-              <p role="status">正在读取文件夹…</p>
+              <p role="status">{tr("正在读取文件夹…")}</p>
             ) : entries.length ? (
               entries.map((entry) => (
                 <button
@@ -281,19 +283,19 @@ export default function DirectoryPicker({
             ) : (
               <p>
                 {filter
-                  ? "没有匹配的子文件夹"
-                  : "此目录没有可见的子文件夹，可直接使用此文件夹。"}
+                  ? tr("没有匹配的子文件夹")
+                  : tr("此目录没有可见的子文件夹，可直接使用此文件夹。")}
               </p>
             )}
           </div>
           <div className="directory-selection">
-            <small>当前选择</small>
-            <code>{listing?.path || "尚未选择"}</code>
-            {!!listing?.skipped && <small>部分子目录无法读取</small>}
+            <small>{tr("当前选择")}</small>
+            <code>{listing?.path || tr("尚未选择")}</code>
+            {!!listing?.skipped && <small>{tr("部分子目录无法读取")}</small>}
           </div>
           <div className="directory-actions">
             <button type="button" onClick={() => setOpen(false)}>
-              取消
+              {tr("取消")}
             </button>
             <button
               type="button"
@@ -304,7 +306,7 @@ export default function DirectoryPicker({
                 setOpen(false);
               }}
             >
-              使用此文件夹
+              {tr("使用此文件夹")}
             </button>
           </div>
         </dialog>,
