@@ -1,5 +1,7 @@
 # 验证报告 · 2026-10-31
 
+[English](VALIDATION_EN.md) | 简体中文
+
 实现与验证在独立目录 `dse_annotation_tool` 中完成，已执行 `git init`。原始数据目录只读。以下为实际执行结果，不是计划或模拟结果。
 
 ## 自动验证
