@@ -1,3 +1,4 @@
+import { t as tr, useI18n } from "./i18n";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent, ReactNode } from "react";
 
@@ -31,6 +32,7 @@ export default function FloatingTimeline({
   onHeightChange: (height: number) => void;
   children: ReactNode;
 }) {
+  useI18n();
   const panel = useRef<HTMLElement>(null);
   const drag = useRef<{
     pointerId: number;
@@ -144,7 +146,7 @@ export default function FloatingTimeline({
     <section
       ref={panel}
       className={"timeline floating-timeline" + (dragging ? " dragging" : "")}
-      aria-label="播放与区间控制"
+      aria-label={tr("播放与区间控制")}
       style={{
         left: location?.x ?? margin,
         top: location?.y ?? margin,
@@ -155,8 +157,8 @@ export default function FloatingTimeline({
         <button
           type="button"
           className="timeline-drag-handle"
-          aria-label="拖动播放与区间控制面板"
-          title="拖动调整位置；方向键微调，Shift 加速，Home 回到底部"
+          aria-label={tr("拖动播放与区间控制面板")}
+          title={tr("拖动调整位置；方向键微调，Shift 加速，Home 回到底部")}
           onPointerDown={startDrag}
           onPointerMove={moveDrag}
           onPointerUp={finishDrag}
@@ -165,8 +167,8 @@ export default function FloatingTimeline({
           onKeyDown={moveWithKeyboard}
         >
           <span aria-hidden="true">⠿</span>
-          播放与区间控制
-          <small>拖动定位 · 自动记住位置</small>
+          {tr("播放与区间控制")}
+          <small>{tr("拖动定位 · 自动记住位置")}</small>
         </button>
         <button
           type="button"
@@ -176,7 +178,7 @@ export default function FloatingTimeline({
             onPositionChange(null);
           }}
         >
-          回到底部
+          {tr("回到底部")}
         </button>
       </div>
       <div className="floating-timeline-body">{children}</div>

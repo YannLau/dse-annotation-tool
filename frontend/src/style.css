@@ -105,7 +105,8 @@ h3 {
   font-size: 13px;
 }
 header {
-  height: 72px;
+  min-height: 72px;
+  flex-wrap: wrap;
   border-bottom: 1px solid #253042;
   display: flex;
   align-items: center;
@@ -145,12 +146,33 @@ header {
 nav {
   margin: auto;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 nav button {
   background: transparent;
   border-color: transparent;
   padding: 10px 17px;
+}
+.language-switcher {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 5px;
+  margin: 8px 0;
+  white-space: nowrap;
+}
+.language-switcher > select {
+  width: auto;
+  margin: 0;
+  max-width: 140px;
+}
+.language-switcher > span {
+  color: #81f0cf;
+  font-size: 18px;
+}
+.class-row > input[aria-label="label_en"] {
+  width: 150px;
 }
 .save-dot {
   width: 7px;

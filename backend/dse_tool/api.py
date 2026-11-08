@@ -1,17 +1,14 @@
 import argparse
-import io
 import json
-import os
 import threading
 import logging
 from logging.handlers import RotatingFileHandler
 import subprocess
 import av
-import time
 from pathlib import Path
 from typing import Literal
 import pyarrow.parquet as pq
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -22,7 +19,6 @@ from .schema import (
     resolve,
     head_spec,
     semantic_errors,
-    evaluate,
     validate_schema,
     deletion_plan,
     prepare_schema,
@@ -50,6 +46,7 @@ class ImportRequest(BaseModel):
 class DirectoryPickerRequest(BaseModel):
     initial_path: str = ""
     purpose: Literal["import", "inspect"] = "import"
+    language: Literal["zh-CN", "en"] = "zh-CN"
 
 
 class AnnotationRequest(BaseModel):
@@ -292,7 +289,7 @@ def create_app(work_root):
 
     @app.post("/api/filesystem/pick-directory")
     def select_directory(body: DirectoryPickerRequest):
-        return pick_directory(body.initial_path, body.purpose)
+        return pick_directory(body.initial_path, body.purpose, body.language)
 
     def get_inspector(handle):
         with media_lock:

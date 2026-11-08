@@ -1,3 +1,4 @@
+import { t as tr, useI18n, categoryLabel } from "./i18n";
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -16,6 +17,7 @@ import DirectoryPicker from "./DirectoryPicker";
 import { FrameImageCache } from "./frameImages";
 import FloatingTimeline, { readPanelPosition } from "./FloatingTimeline";
 import type { PanelPosition } from "./FloatingTimeline";
+import LanguageSwitcher from "./LanguageSwitcher";
 type Obj = Record<string, any>;
 type FrameSnapshot = {
   context: string;
@@ -54,7 +56,7 @@ const defaultTracks = (info: Obj) =>
       /gripper/i.test(name) ? ["observation.state:" + i] : [],
     )
     .slice(0, 2);
-const display = (c: Obj) => `${c.id} · ${c.key} — ${c.label_zh}`;
+const display = (c: Obj) => `${c.id} · ${c.key} — ${categoryLabel(c)}`;
 function RuleEditor({
   rule,
   onChange,
@@ -64,6 +66,7 @@ function RuleEditor({
   onChange: (v: any) => void;
   fields: Obj[];
 }) {
+  useI18n();
   const kind =
     typeof rule === "boolean"
       ? rule
@@ -88,7 +91,7 @@ function RuleEditor({
   return (
     <div className="rule">
       <select
-        aria-label="条件类型"
+        aria-label={tr("条件类型")}
         value={kind}
         onChange={(e) => {
           const k = e.target.value;
@@ -112,7 +115,7 @@ function RuleEditor({
       {kind === "condition" && (
         <>
           <select
-            aria-label="引用字段"
+            aria-label={tr("引用字段")}
             value={rule.field}
             onChange={(e) => {
               const f = fields.find(
@@ -204,12 +207,12 @@ function RuleEditor({
                   })
                 }
               >
-                移除条件
+                {tr("移除条件")}
               </button>
             </div>
           ))}
           <button onClick={() => onChange({ [kind]: [...rule[kind], true] })}>
-            ＋条件
+            {tr("＋条件")}
           </button>
         </div>
       )}
@@ -234,6 +237,7 @@ function SchemaEditor({
   notify: (s: string) => void;
   workspace: string;
 }) {
+  useI18n();
   const [draft, setDraft] = useState<Obj>(structuredClone(schema)),
     [index, setIndex] = useState(0),
     [preview, setPreview] = useState<Obj | null>(null),
@@ -369,7 +373,7 @@ function SchemaEditor({
   return (
     <section className="schema-layout">
       <aside>
-        <h2>字段与规则</h2>
+        <h2>{tr("字段与规则")}</h2>
         {draft.fields.map((f: Obj, i: number) => (
           <button
             className={i === index ? "active" : ""}
@@ -380,7 +384,7 @@ function SchemaEditor({
           </button>
         ))}
         <input
-          placeholder="新字段稳定 key"
+          placeholder={tr("新字段稳定 key")}
           value={newKey}
           onChange={(e) => setNewKey(e.target.value)}
         />
@@ -430,7 +434,7 @@ function SchemaEditor({
             setPreview(null);
           }}
         >
-          ＋新增字段
+          {tr("＋新增字段")}
         </button>
       </aside>
       <article>
@@ -440,42 +444,50 @@ function SchemaEditor({
             className="danger"
             onClick={() => previewDeletion(field.field_id)}
           >
-            删除字段
+            {tr("删除字段")}
           </button>
           {deletionHistory.length > 0 && (
-            <button onClick={undoDeletion}>撤销本次删除</button>
+            <button onClick={undoDeletion}>{tr("撤销本次删除")}</button>
           )}
         </div>
         <p className="footnote">
-          删除前检查规则引用与 unknown 关联；已发布 ID
-          不回收，旧版本和历史标注保留。
+          {tr(
+            "删除前检查规则引用与 unknown 关联；已发布 ID 不回收，旧版本和历史标注保留。",
+          )}
         </p>
         <div className="grid2">
           <label>
-            显示名
+            {tr("显示名")}
             <input
               value={field.label}
               onChange={(e) => update({ label: e.target.value })}
             />
           </label>
           <label>
-            作用域
+            {tr("英文显示名（可选）")}
+            <input
+              value={field.label_en || ""}
+              onChange={(e) => update({ label_en: e.target.value })}
+            />
+          </label>
+          <label>
+            {tr("作用域")}
             <select
               value={field.scope}
               onChange={(e) => update({ scope: e.target.value })}
             >
-              <option value="each_arm">左右臂各自</option>
-              <option value="global">全局</option>
+              <option value="each_arm">{tr("左右臂各自")}</option>
+              <option value="global">{tr("全局")}</option>
             </select>
           </label>
           <label>
-            证据模式
+            {tr("证据模式")}
             <select
               value={field.evidence || "state"}
               onChange={(e) => update({ evidence: e.target.value })}
             >
-              <option value="state">状态观测</option>
-              <option value="behavior">行为复核</option>
+              <option value="state">{tr("状态观测")}</option>
+              <option value="behavior">{tr("行为复核")}</option>
             </select>
           </label>
           <label>
@@ -493,13 +505,20 @@ function SchemaEditor({
           </label>
         </div>
         <label>
-          说明
+          {tr("说明")}
           <textarea
             value={field.description}
             onChange={(e) => update({ description: e.target.value })}
           />
         </label>
-        <h3>稳定类别 · 拖动或箭头调整显示顺序</h3>
+        <label>
+          {tr("英文说明（可选）")}
+          <textarea
+            value={field.description_en || ""}
+            onChange={(e) => update({ description_en: e.target.value })}
+          />
+        </label>
+        <h3>{tr("稳定类别 · 拖动或箭头调整显示顺序")}</h3>
         {field.classes.map((c: Obj, i: number) => (
           <div
             className="class-row"
@@ -517,27 +536,35 @@ function SchemaEditor({
               update({ classes: cs });
             }}
           >
-            {["id", "key", "label_zh", "color", "shortcut"].map((k) => (
-              <input
-                aria-label={k}
-                title={k}
-                key={k}
-                type={k === "color" ? "color" : k === "id" ? "number" : "text"}
-                value={c[k] ?? ""}
-                onChange={(e) =>
-                  update({
-                    classes: field.classes.map((x: Obj, j: number) =>
-                      j === i
-                        ? {
-                            ...x,
-                            [k]: k === "id" ? +e.target.value : e.target.value,
-                          }
-                        : x,
-                    ),
-                  })
-                }
-              />
-            ))}
+            {["id", "key", "label_zh", "color", "shortcut", "label_en"].map(
+              (k) => (
+                <input
+                  aria-label={k}
+                  title={k}
+                  key={k}
+                  placeholder={
+                    k === "label_en" ? tr("类别英文显示名") : undefined
+                  }
+                  type={
+                    k === "color" ? "color" : k === "id" ? "number" : "text"
+                  }
+                  value={c[k] ?? ""}
+                  onChange={(e) =>
+                    update({
+                      classes: field.classes.map((x: Obj, j: number) =>
+                        j === i
+                          ? {
+                              ...x,
+                              [k]:
+                                k === "id" ? +e.target.value : e.target.value,
+                            }
+                          : x,
+                      ),
+                    })
+                  }
+                />
+              ),
+            )}
             <label>
               <input
                 type="checkbox"
@@ -550,7 +577,7 @@ function SchemaEditor({
                   })
                 }
               />
-              废弃
+              {tr("废弃")}
             </label>
             <button
               onClick={() => {
@@ -564,10 +591,10 @@ function SchemaEditor({
             </button>
             <button
               className="danger"
-              aria-label={`删除类别 ${field.field_id} ${c.id}`}
+              aria-label={tr("删除类别 {0} {1}", [field.field_id, c.id])}
               onClick={() => previewDeletion(field.field_id, c.id)}
             >
-              删除
+              {tr("删除")}
             </button>
           </div>
         ))}
@@ -592,15 +619,15 @@ function SchemaEditor({
             });
           }}
         >
-          ＋类别
+          {tr("＋类别")}
         </button>
-        <h3>适用条件 applicable_when</h3>
+        <h3>{tr("适用条件 applicable_when")}</h3>
         <RuleEditor
           rule={field.applicable_when}
           fields={draft.fields}
           onChange={(v) => update({ applicable_when: v })}
         />
-        <h3>必填条件 required_when</h3>
+        <h3>{tr("必填条件 required_when")}</h3>
         <RuleEditor
           rule={field.required_when}
           fields={draft.fields}
@@ -608,7 +635,7 @@ function SchemaEditor({
         />
         <div className="toolbar">
           <label>
-            左 phase
+            {tr("左 phase")}
             <input
               type="number"
               value={lp}
@@ -616,14 +643,14 @@ function SchemaEditor({
             />
           </label>
           <label>
-            右 phase
+            {tr("右 phase")}
             <input
               type="number"
               value={rp}
               onChange={(e) => setRp(+e.target.value)}
             />
           </label>
-          <button onClick={check}>校验与迁移预览</button>
+          <button onClick={check}>{tr("校验与迁移预览")}</button>
           <button
             className="primary"
             disabled={!preview}
@@ -637,14 +664,16 @@ function SchemaEditor({
               }
             }}
           >
-            发布不可变版本
+            {tr("发布不可变版本")}
           </button>
         </div>
         {preview && (
           <>
             <p>
-              变更字段：{preview.migration.changed_fields.join(", ")}；
-              {preview.migration.invalidated_labels} 条标签需复核。
+              {tr("变更字段：")}
+              {preview.migration.changed_fields.join(", ")}；
+              {preview.migration.invalidated_labels}
+              {tr(" 条标签需复核。")}
             </p>
             <div className="grid2">
               {["left", "right"].map((arm) => (
@@ -655,10 +684,10 @@ function SchemaEditor({
                       <p key={key}>
                         {key} · {r.applicability} ·{" "}
                         {r.required === true
-                          ? "必填"
+                          ? tr("必填")
                           : r.required === null
-                            ? "必填未知"
-                            : "选填"}
+                            ? tr("必填未知")
+                            : tr("选填")}
                       </p>
                     ),
                   )}
@@ -674,28 +703,29 @@ function SchemaEditor({
             className="schema-delete-dialog"
             role="dialog"
             aria-modal="true"
-            aria-label="删除依赖检查"
+            aria-label={tr("删除依赖检查")}
           >
             <h2>
-              {deletion.allowed ? "确认从草稿删除" : "无法删除"} ·{" "}
-              {deletion.label}
+              {deletion.allowed ? tr("确认从草稿删除") : tr("无法删除")} ·{" "}
+              {tr(deletion.label)}
             </h2>
             {deletion.allowed ? (
               <>
                 <p>
-                  将从待发布版本移出。现有{" "}
+                  {tr("将从待发布版本移出。现有")}{" "}
                   {deletion.historical_annotation_records}{" "}
-                  条相关标注记录及旧版本仍保留；原字段 key / 类别 ID
-                  不会分配给其他含义。
+                  {tr(
+                    "条相关标注记录及旧版本仍保留；原字段 key / 类别 ID 不会分配给其他含义。",
+                  )}
                 </p>
-                <p>点击后可继续编辑，发布新版本才会生效。</p>
+                <p>{tr("点击后可继续编辑，发布新版本才会生效。")}</p>
               </>
             ) : (
               <>
-                <p>请先解除以下依赖，再重新删除：</p>
+                <p>{tr("请先解除以下依赖，再重新删除：")}</p>
                 <ul>
                   {deletion.blockers.map((reason: string) => (
-                    <li key={reason}>{reason}</li>
+                    <li key={tr(reason)}>{tr(reason)}</li>
                   ))}
                 </ul>
               </>
@@ -706,9 +736,11 @@ function SchemaEditor({
                 disabled={!deletion.allowed}
                 onClick={applyDeletion}
               >
-                确认从草稿删除
+                {tr("确认从草稿删除")}
               </button>
-              <button onClick={() => setDeletion(null)}>关闭 / 取消</button>
+              <button onClick={() => setDeletion(null)}>
+                {tr("关闭 / 取消")}
+              </button>
             </div>
           </div>
         </div>
@@ -717,6 +749,11 @@ function SchemaEditor({
   );
 }
 function App() {
+  const { language } = useI18n();
+  useEffect(() => {
+    document.documentElement.lang = language;
+    document.title = tr("DSE · 双臂标注工作台");
+  }, [language]);
   const [project, setProject] = useState<Obj | null>(null),
     [schema, setSchema] = useState<Obj | null>(null),
     [dataset, setDataset] = useState<Obj | null>(null),
@@ -1586,7 +1623,7 @@ function App() {
   );
   const descriptor = (t: string) => {
     const [key, dim] = t.split(":");
-    return `${key === "action" ? "指令 action" : key.includes("cmd") ? "末端命令" : key === "observation.state" ? "实测 state" : "末端反馈"} · ${featureNames(dataset?.info.features[key])[+dim]}`;
+    return `${tr(key === "action" ? "指令 action" : key.includes("cmd") ? "末端命令" : key === "observation.state" ? "实测 state" : "末端反馈")} · ${featureNames(dataset?.info.features[key])[+dim]}`;
   };
   function fieldPanel(arm: string) {
     return (
@@ -1594,10 +1631,10 @@ function App() {
         <h3>
           <span className={"arm-dot " + arm} />
           {arm === "left"
-            ? "左臂 LEFT"
+            ? tr("左臂 LEFT")
             : arm === "right"
-              ? "右臂 RIGHT"
-              : "全局 GLOBAL"}
+              ? tr("右臂 RIGHT")
+              : tr("全局 GLOBAL")}
         </h3>
         {scopeFields(arm).map((f: Obj) => {
           const r =
@@ -1626,9 +1663,17 @@ function App() {
               }
               key={f.field_id}
             >
-              <label title={f.description}>
-                {f.label || f.field_id}
-                {r?.required === true && <em>必填</em>}
+              <label
+                title={
+                  language === "en"
+                    ? f.description_en || tr(f.description)
+                    : f.description
+                }
+              >
+                {(language === "en" ? f.label_en : f.label) ||
+                  f.label ||
+                  f.field_id}
+                {r?.required === true && <em>{tr("必填")}</em>}
                 <small>
                   {r?.review_status || "draft"} · mask{" "}
                   {r?.effective_loss_mask || 0}
@@ -1651,7 +1696,7 @@ function App() {
                   )
                 }
               >
-                <option value="">— missing / 未标注 —</option>
+                <option value="">{tr("— missing / 未标注 —")}</option>
                 {f.classes
                   .filter((c: Obj) => !c.deprecated || c.id === r?.value_id)
                   .map((c: Obj) => (
@@ -1660,7 +1705,7 @@ function App() {
                     </option>
                   ))}
               </select>
-              {r?.reason && <small>{r.reason}</small>}
+              {r?.reason && <small>{tr(r.reason)}</small>}
             </div>
           );
         })}
@@ -1674,16 +1719,16 @@ function App() {
           <span className="logo">D</span>
           <div>
             DSE <b>ANNOTATION</b>
-            <small>双臂观测 · 本地工作台</small>
+            <small>{tr("双臂观测 · 本地工作台")}</small>
           </div>
         </div>
         <nav>
           {[
-            ["work", "标注工作台"],
-            ["schema", "字段与规则"],
-            ["assist", "行为与校准"],
-            ["export", "导出数据集"],
-            ["inspect", "导出检查器"],
+            ["work", tr("标注工作台")],
+            ["schema", tr("字段与规则")],
+            ["assist", tr("行为与校准")],
+            ["export", tr("导出数据集")],
+            ["inspect", tr("导出检查器")],
           ].map(([key, label]) => (
             <button
               key={key}
@@ -1697,18 +1742,19 @@ function App() {
                 }
               }}
             >
-              {label}
+              {tr(label)}
             </button>
           ))}
         </nav>
+        <LanguageSwitcher />
         <span className={"save-dot " + (busy ? "saving" : "")} />
-        <small>{busy ? "保存中…" : "本地自动保存"}</small>
+        <small>{busy ? tr("保存中…") : tr("本地自动保存")}</small>
       </header>
       {page !== "inspect" && (
         <div className="import-bar">
-          <span>数据源</span>
+          <span>{tr("数据源")}</span>
           <input
-            aria-label="本地数据路径"
+            aria-label={tr("本地数据路径")}
             value={path}
             onChange={(e) => setPath(e.target.value)}
           />
@@ -1720,15 +1766,15 @@ function App() {
             onBrowse={() => setPlaying(false)}
           />
           <button className="primary" disabled={busy} onClick={importSource}>
-            导入 / 重新绑定
+            {tr("导入 / 重新绑定")}
           </button>
           {project?.datasets.length > 0 && (
             <select
-              aria-label="已登记数据集"
+              aria-label={tr("已登记数据集")}
               value={datasetKey}
               onChange={(e) => choose(e.target.value)}
             >
-              <option value="">选择项目来源</option>
+              <option value="">{tr("选择项目来源")}</option>
               {project!.datasets.map((d: Obj) => (
                 <option key={d.fingerprint} value={d.fingerprint}>
                   {d.root.split("/").slice(-1)[0]} · {d.fingerprint.slice(0, 7)}
@@ -1740,22 +1786,25 @@ function App() {
       )}
       {error ? (
         <div role="alert" className="notice error">
-          {error}
-          <button onClick={() => setError("")}>关闭</button>
+          {tr(error)}
+          <button onClick={() => setError("")}>{tr("关闭")}</button>
         </div>
       ) : (
-        <div className="notice">{message}</div>
+        <div className="notice">{tr(message)}</div>
       )}
       {!dataset && page !== "inspect" && (
         <div className="empty">
           <span className="eyebrow">LOCAL DATA, REAL EVIDENCE</span>
-          <h1>从真实观测，建立可靠标签。</h1>
+          <h1>{tr("从真实观测，建立可靠标签。")}</h1>
           <p>
-            通过本机目录导入 LeRobot
-            v2.1。三视角同步、左右臂独立标注，所有工作保存在本地 SQLite。
+            {tr(
+              "通过本机目录导入 LeRobot v2.1。三视角同步、左右臂独立标注，所有工作保存在本地 SQLite。",
+            )}
           </p>
-          <p>原始数据只读。上方选择文件夹或填入目录后开始。</p>
-          {busy && <div className="loader">正在逐项校验…页面仍可操作</div>}
+          <p>{tr("原始数据只读。上方选择文件夹或填入目录后开始。")}</p>
+          {busy && (
+            <div className="loader">{tr("正在逐项校验…页面仍可操作")}</div>
+          )}
         </div>
       )}
       {dataset && page === "work" && (
@@ -1768,7 +1817,7 @@ function App() {
               EPISODES <span>{dataset.episodes.length}</span>
             </div>
             <input
-              placeholder="搜索任务 / episode"
+              placeholder={tr("搜索任务 / episode")}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -1782,7 +1831,7 @@ function App() {
                     choose(datasetKey, dataset.episodes[i - 1].episode_index);
                 }}
               >
-                ↑ 上一条
+                {tr("↑ 上一条")}
               </button>
               <button
                 onClick={() => {
@@ -1793,7 +1842,7 @@ function App() {
                     choose(datasetKey, dataset.episodes[i + 1].episode_index);
                 }}
               >
-                ↓ 下一条
+                {tr("↓ 下一条")}
               </button>
             </div>
             {dataset.episodes
@@ -1812,12 +1861,16 @@ function App() {
                 >
                   <b>EP {String(e.episode_index).padStart(3, "0")}</b>
                   <span>
-                    {(e.length / fps).toFixed(2)}s · {e.length} 帧
+                    {(e.length / fps).toFixed(2)}s · {e.length}
+                    {tr(" 帧")}
                   </span>
                   <small>{e.tasks.join(" ")}</small>
                   <small>
-                    {e.selections.length} 个选区 · {e.reviewed_records}{" "}
-                    条审核记录 · {e.reviewed_frames} 帧含已审核字段
+                    {e.selections.length}
+                    {tr(" 个选区 · ")}
+                    {e.reviewed_records} {tr("条审核记录 · ")}
+                    {e.reviewed_frames}
+                    {tr(" 帧含已审核字段")}
                   </small>
                   <div className="progress">
                     <i
@@ -1831,14 +1884,17 @@ function App() {
                 </button>
               ))}
             <div className="footnote">
-              校验：已通过
+              {tr("校验：已通过")}
               <br />
-              精度差异记录：{dataset.report?.warnings.length || 0} 项
+              {tr("精度差异记录：")}
+              {dataset.report?.warnings.length || 0}
+              {tr(" 项")}
               <br />
               {dataset.info.features["observation.state"]?.shape[0]}D state ·{" "}
               {dataset.info.fps} FPS
               <br />
-              工作库：{project?.work_root}
+              {tr("工作库：")}
+              {project?.work_root}
             </div>
           </aside>
           <section className="viewer">
@@ -1847,7 +1903,7 @@ function App() {
                 <span className="eyebrow">
                   EPISODE {String(episode).padStart(3, "0")}
                 </span>
-                <h2>{view?.task || "加载任务…"}</h2>
+                <h2>{view?.task || tr("加载任务…")}</h2>
               </div>
               <div className="mode-switch">
                 <button
@@ -1857,26 +1913,31 @@ function App() {
                     setPlaying(false);
                   }}
                 >
-                  状态标注
+                  {tr("状态标注")}
                 </button>
                 <button
                   className={mode === "behavior" ? "active" : ""}
                   onClick={() => setMode("behavior")}
                 >
-                  行为复核
+                  {tr("行为复核")}
                 </button>
               </div>
             </div>
             <div className="evidence-note">
               {mode === "state"
-                ? `观测窗口 [t−${historyConfig.horizon_seconds}, t] · ${historyConfig.num_frames} 个时刻（含当前）· 只显示实测反馈 · 不显示动作指令及未来标签`
-                : "整段行为证据 · 可审核动作、事件与 adviser · 查看行为模式将记录未来证据暴露"}
+                ? tr(
+                    "观测窗口 [t−{0}, t] · {1} 个时刻（含当前）· 只显示实测反馈 · 不显示动作指令及未来标签",
+                    [historyConfig.horizon_seconds, historyConfig.num_frames],
+                  )
+                : tr(
+                    "整段行为证据 · 可审核动作、事件与 adviser · 查看行为模式将记录未来证据暴露",
+                  )}
             </div>
             <div className="history-controls">
               <label>
-                历史跨度（秒）
+                {tr("历史跨度（秒）")}
                 <input
-                  aria-label="历史跨度（秒）"
+                  aria-label={tr("历史跨度（秒）")}
                   type="number"
                   min="0"
                   max="3600"
@@ -1891,9 +1952,9 @@ function App() {
                 />
               </label>
               <label>
-                时刻数（含当前）
+                {tr("时刻数（含当前）")}
                 <input
-                  aria-label="历史时刻数（含当前）"
+                  aria-label={tr("历史时刻数（含当前）")}
                   type="number"
                   min="1"
                   max="32"
@@ -1904,10 +1965,11 @@ function App() {
                   }
                 />
               </label>
-              <button onClick={applyHistory}>应用历史设置</button>
+              <button onClick={applyHistory}>{tr("应用历史设置")}</button>
               <small>
-                每个时刻含三相机；均匀采样到当前 t。5秒 / 3时刻 =
-                t−5、t−2.5、t。改变证据窗口后请复核状态标签。
+                {tr(
+                  "每个时刻含三相机；均匀采样到当前 t。5秒 / 3时刻 = t−5、t−2.5、t。改变证据窗口后请复核状态标签。",
+                )}
               </small>
             </div>
             <div className="camera-region" aria-busy={loading || choosing}>
@@ -1916,13 +1978,16 @@ function App() {
                   (cam: string, c: number) => (
                     <div className="camera" key={cam}>
                       <div className="camera-label">
-                        <span>{names[cam] || cam}</span>
+                        <span>{tr(names[cam] || cam)}</span>
                         <span>t · #{displayedFrame}</span>
                       </div>
                       {images[`${currentStep}:${c}`] ? (
                         <img
                           src={images[`${currentStep}:${c}`]}
-                          alt={`${names[cam] || cam} 当前帧 ${displayedFrame}`}
+                          alt={tr("{0} 当前帧 {1}", [
+                            tr(names[cam] || cam),
+                            displayedFrame,
+                          ])}
                           onClick={() => {
                             setModal({
                               src: images[`${currentStep}:${c}`],
@@ -1934,7 +1999,7 @@ function App() {
                         />
                       ) : (
                         <div className="placeholder">
-                          {loading ? "加载画面…" : "画面缺失"}
+                          {loading ? tr("加载画面…") : tr("画面缺失")}
                         </div>
                       )}
                     </div>
@@ -1948,28 +2013,30 @@ function App() {
                     gridTemplateColumns: `55px repeat(${historyConfig.num_frames}, minmax(75px, 1fr))`,
                   }}
                 >
-                  <div className="history-label">历史参考</div>
+                  <div className="history-label">{tr("历史参考")}</div>
                   {historySteps.map((t: number) => (
                     <div className="history-time" key={t}>
                       {t === currentStep
-                        ? "当前 t"
+                        ? tr("当前 t")
                         : `t − ${Number(historyOffsets[t].toFixed(3))}`}
                       <small>
                         {view?.history[t]?.frame != null
                           ? `#${view?.history[t].frame} · ${view?.history[t].timestamp.toFixed(3)}s`
-                          : "缺失 / mask 0"}
+                          : tr("缺失 / mask 0")}
                       </small>
                     </div>
                   ))}
                   {(view?.cameras || Object.keys(names)).map(
                     (cam: string, c: number) => (
                       <React.Fragment key={cam}>
-                        <div className="history-label">{names[cam] || cam}</div>
+                        <div className="history-label">
+                          {tr(names[cam] || cam)}
+                        </div>
                         {historySteps.map((t) => (
                           <div className="history-cell" key={t}>
                             {images[`${t}:${c}`] ? (
                               <img
-                                alt={`${cam} 历史 ${t}`}
+                                alt={tr("{0} 历史 {1}", [cam, t])}
                                 src={images[`${t}:${c}`]}
                                 onClick={() => {
                                   setModal({
@@ -1982,7 +2049,9 @@ function App() {
                               />
                             ) : (
                               <span>
-                                {!view && loading ? "加载画面…" : "无有效历史"}
+                                {!view && loading
+                                  ? tr("加载画面…")
+                                  : tr("无有效历史")}
                               </span>
                             )}
                           </div>
@@ -1994,30 +2063,38 @@ function App() {
               </div>
             </div>
             {mode === "behavior" && (
-              <section className="future-reference" aria-label="未来帧参考">
+              <section
+                className="future-reference"
+                aria-label={tr("未来帧参考")}
+              >
                 <div className="future-heading">
-                  <h3>未来动作参考 · 决策帧固定 #{displayedFrame}</h3>
+                  <h3>
+                    {tr("未来动作参考 · 决策帧固定 #")}
+                    {displayedFrame}
+                  </h3>
                   <label>
-                    参考跨度
+                    {tr("参考跨度")}
                     <select
-                      aria-label="未来参考跨度"
+                      aria-label={tr("未来参考跨度")}
                       value={futureHorizon}
                       onChange={(e) => setFutureHorizon(+e.target.value)}
                     >
                       {[0.25, 0.5, 1, 2, 5].map((s) => (
                         <option key={s} value={s}>
-                          {s} 秒
+                          {s}
+                          {tr(" 秒")}
                         </option>
                       ))}
                     </select>
                   </label>
                 </div>
                 <p>
-                  用于 adviser / 动作复核；查看这些画面不会移动当前标签帧。自动
-                  adviser 窗口仍最多0.25秒，切回状态标注立即隐藏未来证据。
+                  {tr(
+                    "用于 adviser / 动作复核；查看这些画面不会移动当前标签帧。自动 adviser 窗口仍最多0.25秒，切回状态标注立即隐藏未来证据。",
+                  )}
                 </p>
                 <div className="future-grid">
-                  <div className="history-label">相机</div>
+                  <div className="history-label">{tr("相机")}</div>
                   {[0, 1, 2].map((t) => (
                     <div className="history-time" key={t}>
                       t +{" "}
@@ -2028,19 +2105,24 @@ function App() {
                       <small>
                         {view?.future?.[t]?.frame !== null && view?.future?.[t]
                           ? `#${view.future[t].frame} · ${view.future[t].timestamp.toFixed(3)}s`
-                          : "未来不足 / mask 0"}
+                          : tr("未来不足 / mask 0")}
                       </small>
                     </div>
                   ))}
                   {(view?.cameras || Object.keys(names)).map(
                     (cam: string, c: number) => (
                       <React.Fragment key={cam}>
-                        <div className="history-label">{names[cam] || cam}</div>
+                        <div className="history-label">
+                          {tr(names[cam] || cam)}
+                        </div>
                         {[0, 1, 2].map((t) => (
                           <div className="history-cell" key={t}>
                             {images[`future:${t}:${c}`] ? (
                               <img
-                                alt={`${names[cam] || cam} 未来帧 ${view?.future?.[t]?.frame}`}
+                                alt={tr("{0} 未来帧 {1}", [
+                                  tr(names[cam] || cam),
+                                  view?.future?.[t]?.frame,
+                                ])}
                                 src={images[`future:${t}:${c}`]}
                                 onClick={() => {
                                   setModal({
@@ -2054,8 +2136,8 @@ function App() {
                             ) : (
                               <span>
                                 {!view && loading
-                                  ? "加载画面…"
-                                  : "无有效未来帧"}
+                                  ? tr("加载画面…")
+                                  : tr("无有效未来帧")}
                               </span>
                             )}
                           </div>
@@ -2073,16 +2155,16 @@ function App() {
               onHeightChange={setFloatingTimelineHeight}
             >
               <div className="transport">
-                <button aria-label="上一帧" onClick={() => navigate(-1)}>
+                <button aria-label={tr("上一帧")} onClick={() => navigate(-1)}>
                   ◀
                 </button>
                 <button
                   className="primary"
                   onClick={() => setPlaying((p) => !p)}
                 >
-                  {playing ? "暂停" : "播放"}
+                  {playing ? tr("暂停") : tr("播放")}
                 </button>
-                <button aria-label="下一帧" onClick={() => navigate(1)}>
+                <button aria-label={tr("下一帧")} onClick={() => navigate(1)}>
                   ▶
                 </button>
                 <select
@@ -2100,10 +2182,10 @@ function App() {
                   <small>/ {((n - 1) / fps).toFixed(3)} s</small>
                 </b>
                 <label>
-                  源帧
+                  {tr("源帧")}
                   <input
                     className="frame-input"
-                    aria-label="源帧"
+                    aria-label={tr("源帧")}
                     type="number"
                     min={0}
                     max={n - 1}
@@ -2121,14 +2203,14 @@ function App() {
                     ])
                   }
                 >
-                  放大时间轴
+                  {tr("放大时间轴")}
                 </button>
-                <button onClick={() => setZoom(null)}>全段</button>
+                <button onClick={() => setZoom(null)}>{tr("全段")}</button>
               </div>
               <div className="scrubber-row">
                 <input
                   className="scrubber"
-                  aria-label="帧游标"
+                  aria-label={tr("帧游标")}
                   type="range"
                   min={timelineStart}
                   max={timelineEnd}
@@ -2140,7 +2222,7 @@ function App() {
                 />
               </div>
               <div className="track training-centers">
-                <span>训练中心</span>
+                <span>{tr("训练中心")}</span>
                 <div>
                   {view?.selections
                     .filter((s: Obj) => timelineVisible(s.start, s.end))
@@ -2148,7 +2230,10 @@ function App() {
                       <button
                         title={`[${s.start},${s.end})`}
                         key={s.id}
-                        aria-label={`训练中心区间 [${s.start},${s.end})`}
+                        aria-label={tr("训练中心区间 [{0},{1})", [
+                          s.start,
+                          s.end,
+                        ])}
                         style={timelineInterval(s.start, s.end)}
                         onClick={() => {
                           setPlaying(false);
@@ -2162,7 +2247,10 @@ function App() {
               {mode === "behavior" &&
                 ["left", "right"].map((arm) => (
                   <div className="track" key={arm}>
-                    <span>{arm === "left" ? "左臂" : "右臂"}阶段</span>
+                    <span>
+                      {arm === "left" ? tr("左臂") : tr("右臂")}
+                      {tr("阶段")}
+                    </span>
                     <div>
                       {view?.tracks
                         .filter(
@@ -2201,7 +2289,7 @@ function App() {
                 ))}
               {mode === "behavior" && (
                 <div className="track">
-                  <span>事件 / 动作</span>
+                  <span>{tr("事件 / 动作")}</span>
                   <div>
                     {view?.reviews
                       .filter((r: Obj) =>
@@ -2258,7 +2346,7 @@ function App() {
               {mode === "behavior" && (
                 <details className="extra-tracks">
                   <summary>
-                    展开字段与审核轨 · 实线已审 / 淡色草稿或待复核
+                    {tr("展开字段与审核轨 · 实线已审 / 淡色草稿或待复核")}
                   </summary>
                   {["left", "right", "global"].flatMap(
                     (arm) =>
@@ -2272,10 +2360,10 @@ function App() {
                           <div className="track" key={arm + f.field_id}>
                             <span title={arm + "." + f.field_id}>
                               {arm === "left"
-                                ? "左"
+                                ? tr("左")
                                 : arm === "right"
-                                  ? "右"
-                                  : "全局"}{" "}
+                                  ? tr("右")
+                                  : tr("全局")}{" "}
                               {f.field_id}
                             </span>
                             <div>
@@ -2333,9 +2421,9 @@ function App() {
               )}
               <div className="selection-row">
                 <label>
-                  首帧（含）
+                  {tr("首帧（含）")}
                   <input
-                    aria-label="选区首帧"
+                    aria-label={tr("选区首帧")}
                     type="number"
                     value={range[0]}
                     min={0}
@@ -2348,12 +2436,12 @@ function App() {
                     setRange([frame, Math.max(frame + 1, range[1])])
                   }
                 >
-                  [ 设起点
+                  {tr("[ 设起点")}
                 </button>
                 <label>
-                  末帧（不含）
+                  {tr("末帧（不含）")}
                   <input
-                    aria-label="选区末帧不含"
+                    aria-label={tr("选区末帧不含")}
                     type="number"
                     value={range[1]}
                     min={1}
@@ -2366,7 +2454,7 @@ function App() {
                     setRange([Math.min(range[0], frame), frame + 1])
                   }
                 >
-                  设终点 ]
+                  {tr("设终点 ]")}
                 </button>
                 <button
                   onClick={() =>
@@ -2378,7 +2466,7 @@ function App() {
                     })
                   }
                 >
-                  ＋保留训练区间
+                  {tr("＋保留训练区间")}
                 </button>
                 <button
                   onClick={() =>
@@ -2391,21 +2479,27 @@ function App() {
                     })
                   }
                 >
-                  移除区间
+                  {tr("移除区间")}
                 </button>
               </div>
               <small>
-                当前选区 [{range[0]}, {range[1]}) · 包含帧 {range[0]}–
-                {range[1] - 1} · 导出前史 {historyCapacity}{" "}
-                秒，尾部复核最多0.25秒另行保留。
+                {tr("当前选区 [")}
+                {range[0]}, {range[1]}
+                {tr(") · 包含帧 ")}
+                {range[0]}–{range[1] - 1}
+                {tr(" · 导出前史 ")}
+                {historyCapacity} {tr("秒，尾部复核最多0.25秒另行保留。")}
               </small>
             </FloatingTimeline>
             <section className="telemetry">
               <div className="section-heading">
-                TELEMETRY <span>实测 / 命令具名轨道</span>
+                TELEMETRY <span>{tr("实测 / 命令具名轨道")}</span>
               </div>
               <details>
-                <summary>选择轨道（{visibleTracks.length}）</summary>
+                <summary>
+                  {tr("选择轨道（")}
+                  {visibleTracks.length}）
+                </summary>
                 <div className="track-picker">
                   {telemetryFeatures.map(([key, f]: [string, any]) => (
                     <div key={key}>
@@ -2501,13 +2595,13 @@ function App() {
                 disabled={busy}
                 onClick={() => mutate("/history/undo", {})}
               >
-                撤销
+                {tr("撤销")}
               </button>
               <button
                 disabled={busy}
                 onClick={() => mutate("/history/redo", {})}
               >
-                重做
+                {tr("重做")}
               </button>
             </div>
             <label className="check">
@@ -2528,19 +2622,19 @@ function App() {
                   }
                 }}
               />
-              将下次赋值应用到明确选区
+              {tr("将下次赋值应用到明确选区")}
             </label>
             <div className="scope-note">
               {interval
-                ? `批量区间 [${range[0]}, ${range[1]})`
-                : `逐帧覆盖 · #${frame}`}
+                ? tr("批量区间 [{0}, {1})", [range[0], range[1]])
+                : tr("逐帧覆盖 · #{0}", [frame])}
             </div>
             {interval && (
               <>
                 <label className="range-point-policy">
-                  区间赋值方式
+                  {tr("区间赋值方式")}
                   <select
-                    aria-label="区间赋值方式"
+                    aria-label={tr("区间赋值方式")}
                     disabled={busy}
                     value={pointPolicy}
                     onChange={(e) => {
@@ -2555,14 +2649,18 @@ function App() {
                       setPreviewLoading(batchDraft.changes.length > 0);
                     }}
                   >
-                    <option value="preserve">保留单帧例外</option>
-                    <option value="overwrite">统一覆盖，包括单帧</option>
+                    <option value="preserve">{tr("保留单帧例外")}</option>
+                    <option value="overwrite">
+                      {tr("统一覆盖，包括单帧")}
+                    </option>
                   </select>
                 </label>
                 <p className="footnote">
                   {pointPolicy === "overwrite"
-                    ? "本组区间赋值将覆盖所选字段的已有单帧标注（含 missing）；不适用帧仍跳过。"
-                    : "本组区间赋值保留所选字段的已有单帧标注。"}
+                    ? tr(
+                        "本组区间赋值将覆盖所选字段的已有单帧标注（含 missing）；不适用帧仍跳过。",
+                      )
+                    : tr("本组区间赋值保留所选字段的已有单帧标注。")}
                 </p>
               </>
             )}
@@ -2574,12 +2672,16 @@ function App() {
                 : []),
             ].map(fieldPanel)}
             {batchDraft.changes.length > 0 && (
-              <div className="batch-preview" aria-label="整组标注草稿">
-                <b>整组草稿 · {batchDraft.changes.length} 项待确认</b>
+              <div className="batch-preview" aria-label={tr("整组标注草稿")}>
+                <b>
+                  {tr("整组草稿 · ")}
+                  {batchDraft.changes.length}
+                  {tr(" 项待确认")}
+                </b>
                 <p>
-                  选择值已显示；阶段与必填关系自动预览。
+                  {tr("选择值已显示；阶段与必填关系自动预览。")}
                   {interval && focusFrame !== frame
-                    ? `门控参考选区首帧 #${focusFrame}。`
+                    ? tr("门控参考选区首帧 #{0}。", [focusFrame])
                     : ""}
                 </p>
                 {batchDraft.changes.map((c: Obj, i: number) =>
@@ -2590,7 +2692,7 @@ function App() {
                         {c.value ?? "missing"}
                       </span>
                       <button
-                        aria-label={`移除草稿 ${i + 1}`}
+                        aria-label={tr("移除草稿 {0}", [i + 1])}
                         disabled={busy}
                         onClick={() =>
                           setBatchDraft((draft: Obj) => ({
@@ -2607,45 +2709,45 @@ function App() {
                   ) : null,
                 )}
                 {batchDraft.changes.some((c: Obj) => c.mode !== mode) && (
-                  <p>另有其他证据模式草稿；切换后可查看其内容。</p>
+                  <p>{tr("另有其他证据模式草稿；切换后可查看其内容。")}</p>
                 )}
                 {previewLoading ? (
-                  <p role="status">正在更新整组门控与覆盖范围…</p>
+                  <p role="status">{tr("正在更新整组门控与覆盖范围…")}</p>
                 ) : (
                   effectivePreview && (
                     <p>
-                      字段帧合计：影响{" "}
+                      {tr("字段帧合计：影响")}{" "}
                       {effectivePreview.reports.reduce(
                         (n: number, r: Obj) => n + r.affected,
                         0,
                       )}{" "}
-                      · 跳过{" "}
+                      {tr("· 跳过")}{" "}
                       {effectivePreview.reports.reduce(
                         (n: number, r: Obj) => n + r.skipped,
                         0,
                       )}{" "}
-                      · 适用未知{" "}
+                      {tr("· 适用未知")}{" "}
                       {effectivePreview.reports.reduce(
                         (n: number, r: Obj) => n + r.needs_review,
                         0,
                       )}{" "}
-                      · 重叠{" "}
+                      {tr("· 重叠")}{" "}
                       {effectivePreview.reports.reduce(
                         (n: number, r: Obj) => n + r.overlaps,
                         0,
                       )}
                       <br />
-                      将覆盖单帧标注{" "}
+                      {tr("将覆盖单帧标注")}{" "}
                       {effectivePreview.reports.reduce(
                         (n: number, r: Obj) => n + r.overwritten_points,
                         0,
                       )}{" "}
-                      个字段帧； 保留逐帧覆盖{" "}
+                      {tr("个字段帧； 保留逐帧覆盖")}{" "}
                       {effectivePreview.reports.reduce(
                         (n: number, r: Obj) => n + r.point_overrides,
                         0,
                       )}{" "}
-                      个字段帧；提交后按各帧实际适用性生效。
+                      {tr("个字段帧；提交后按各帧实际适用性生效。")}
                     </p>
                   )
                 )}
@@ -2654,28 +2756,37 @@ function App() {
                   disabled={busy || previewLoading || !effectivePreview}
                   onClick={commitBatch}
                 >
-                  确认保存全部 {batchDraft.changes.length} 项
+                  {tr("确认保存全部 ")}
+                  {batchDraft.changes.length}
+                  {tr(" 项")}
                 </button>
                 <button disabled={busy} onClick={cancelBatch}>
-                  取消整组草稿
+                  {tr("取消整组草稿")}
                 </button>
               </div>
             )}
             <label className="review-scope">
-              标签审核范围
+              {tr("标签审核范围")}
               <select
-                aria-label="标签审核范围"
+                aria-label={tr("标签审核范围")}
                 value={reviewScope}
                 onChange={(e) => setReviewScope(e.target.value)}
               >
-                <option value="frame">当前帧 #{frame}</option>
+                <option value="frame">
+                  {tr("当前帧 #")}
+                  {frame}
+                </option>
                 <option value="range">
-                  当前选区 [{range[0]}, {range[1]}) · {range[1] - range[0]}帧
+                  {tr("当前选区 [")}
+                  {range[0]}, {range[1]}) · {range[1] - range[0]}
+                  {tr("帧")}
                 </option>
               </select>
             </label>
             <p className="footnote">
-              审核只更新已有标签的审核状态，保留区间内每帧的不同取值与逐帧覆盖；不会把当前帧标签铺满选区。
+              {tr(
+                "审核只更新已有标签的审核状态，保留区间内每帧的不同取值与逐帧覆盖；不会把当前帧标签铺满选区。",
+              )}
             </p>
             {mode === "state" && (
               <label className="check">
@@ -2684,12 +2795,14 @@ function App() {
                   checked={confirmed}
                   onChange={(e) => setConfirmed(e.target.checked)}
                 />
-                我确认
+                {tr("我确认")}
                 {reviewScope === "range"
-                  ? `选区 [${range[0]},${range[1]}) 内各帧`
-                  : "当前帧"}
-                的 [t−{historyConfig.horizon_seconds},t]、
-                {historyConfig.num_frames} 个采样时刻能够支持已有状态标签。
+                  ? tr("选区 [{0},{1}) 内各帧", [range[0], range[1]])
+                  : tr("当前帧")}
+                {tr("的 [t−")}
+                {historyConfig.horizon_seconds},t]、
+                {historyConfig.num_frames}
+                {tr(" 个采样时刻能够支持已有状态标签。")}
               </label>
             )}
             <button
@@ -2704,8 +2817,8 @@ function App() {
               onClick={() => reviewCurrent()}
             >
               {reviewScope === "range"
-                ? "审核选区已填写字段"
-                : "审核当前已填写字段"}
+                ? tr("审核选区已填写字段")
+                : tr("审核当前已填写字段")}
             </button>
             <button
               className="full"
@@ -2717,42 +2830,45 @@ function App() {
               }
               onClick={() => reviewCurrent(true)}
             >
-              预检查审核范围（不修改）
+              {tr("预检查审核范围（不修改）")}
             </button>
             {reviewReport && (
               <div className="review-report" role="status">
                 <b>
-                  {reviewReport.saved ? "审核结果" : "审核预检查"} · [
+                  {reviewReport.saved ? tr("审核结果") : tr("审核预检查")} · [
                   {reviewReport.start},{reviewReport.end})
                 </b>
                 <p>
-                  {reviewReport.reviewed_pairs} 项
-                  {reviewReport.saved ? "已更新" : "可更新"} ·{" "}
-                  {reviewReport.already_reviewed_pairs} 项此前已审 ·{" "}
-                  {reviewReport.skipped_pairs} 项跳过（按字段×帧计数）
+                  {reviewReport.reviewed_pairs}
+                  {tr(" 项")}
+                  {reviewReport.saved ? tr("已更新") : tr("可更新")} ·{" "}
+                  {reviewReport.already_reviewed_pairs}
+                  {tr(" 项此前已审 ·")} {reviewReport.skipped_pairs}
+                  {tr(" 项跳过（按字段×帧计数）")}
                 </p>
                 <small>
-                  选区内 {reviewReport.training_center_frames}/
-                  {reviewReport.frames}{" "}
-                  帧是训练中心；审核不会自动加入训练中心选区。
+                  {tr("选区内 ")}
+                  {reviewReport.training_center_frames}/{reviewReport.frames}{" "}
+                  {tr("帧是训练中心；审核不会自动加入训练中心选区。")}
                 </small>
                 <details>
-                  <summary>查看跳过原因与位置</summary>
+                  <summary>{tr("查看跳过原因与位置")}</summary>
                   <p>
-                    未填 {reviewReport.missing_pairs} · 不适用{" "}
-                    {reviewReport.inapplicable_pairs} · 适用未知{" "}
-                    {reviewReport.undetermined_pairs} · 冲突{" "}
-                    {reviewReport.conflict_pairs} · 废弃/删除类别{" "}
-                    {reviewReport.retired_pairs}
+                    {tr("未填 ")}
+                    {reviewReport.missing_pairs}
+                    {tr(" · 不适用")} {reviewReport.inapplicable_pairs}
+                    {tr(" · 适用未知")} {reviewReport.undetermined_pairs}
+                    {tr(" · 冲突")} {reviewReport.conflict_pairs}
+                    {tr(" · 废弃/删除类别")} {reviewReport.retired_pairs}
                   </p>
                   {reviewReport.issues.map((issue: Obj, i: number) => (
                     <button key={i} onClick={() => setFrame(issue.start)}>
                       [{issue.start},{issue.end}) {issue.arm}.{issue.field}：
-                      {issue.reason}
+                      {tr(issue.reason)}
                     </button>
                   ))}
                   {reviewReport.issue_groups > reviewReport.issues.length && (
-                    <small>显示前100组，可修复后重新预检查。</small>
+                    <small>{tr("显示前100组，可修复后重新预检查。")}</small>
                   )}
                 </details>
               </div>
@@ -2766,8 +2882,8 @@ function App() {
               aria-describedby="completion-check-help"
             >
               {visibleCompletion?.state === "checking"
-                ? "正在检查本帧…"
-                : "检查本帧完成条件"}
+                ? tr("正在检查本帧…")
+                : tr("检查本帧完成条件")}
             </button>
             {visibleCompletion && (
               <div
@@ -2780,7 +2896,7 @@ function App() {
                     ? "alert"
                     : "status"
                 }
-                aria-label="本帧完成条件检查结果"
+                aria-label={tr("本帧完成条件检查结果")}
               >
                 <div className="completion-feedback-heading">
                   <span className="completion-feedback-icon" aria-hidden="true">
@@ -2792,56 +2908,63 @@ function App() {
                   </span>
                   <strong>
                     {visibleCompletion.state === "passed"
-                      ? "检查通过"
+                      ? tr("检查通过")
                       : visibleCompletion.state === "issues"
-                        ? `待完成 · ${visibleCompletion.errors.length} 条提示`
+                        ? tr("待完成 · {0} 条提示", [
+                            visibleCompletion.errors.length,
+                          ])
                         : visibleCompletion.state === "error"
-                          ? "检查失败"
-                          : "正在检查…"}
+                          ? tr("检查失败")
+                          : tr("正在检查…")}
                   </strong>
                   <button
-                    aria-label="关闭本帧检查结果"
+                    aria-label={tr("关闭本帧检查结果")}
                     onClick={closeCompletion}
                   >
                     ×
                   </button>
                 </div>
                 <p>
-                  EP {visibleCompletion.episode} · 帧 #{visibleCompletion.frame}
+                  EP {visibleCompletion.episode}
+                  {tr(" · 帧 #")}
+                  {visibleCompletion.frame}
                 </p>
                 {visibleCompletion.state === "passed" ? (
-                  <p>本帧所有必填与审核条件已完成。</p>
+                  <p>{tr("本帧所有必填与审核条件已完成。")}</p>
                 ) : visibleCompletion.errors.length > 0 ? (
                   <ul>
                     {visibleCompletion.errors.map(
                       (message: string, index: number) => (
-                        <li key={index}>{message}</li>
+                        <li key={index}>{tr(message)}</li>
                       ),
                     )}
                   </ul>
                 ) : (
-                  <p>正在读取本帧已保存的标签…</p>
+                  <p>{tr("正在读取本帧已保存的标签…")}</p>
                 )}
-                <small>只读检查，不修改标签或 loss mask。</small>
+                <small>{tr("只读检查，不修改标签或 loss mask。")}</small>
                 {batchDraft.changes.length > 0 && (
                   <small className="completion-draft-note">
-                    还有 {batchDraft.changes.length}{" "}
-                    项未确认草稿，本次检查不包含这些草稿。
+                    {tr("还有 ")}
+                    {batchDraft.changes.length}{" "}
+                    {tr("项未确认草稿，本次检查不包含这些草稿。")}
                   </small>
                 )}
               </div>
             )}
             <p className="footnote" id="completion-check-help">
-              审核允许保留部分有效监督；“检查本帧完成条件”只报告本帧全部必填与审核缺口，不修改标签。unknown
-              是已填类别；missing、不适用、待复核和仅上下文不计损失。
+              {tr(
+                "审核允许保留部分有效监督；“检查本帧完成条件”只报告本帧全部必填与审核缺口，不修改标签。unknown 是已填类别；missing、不适用、待复核和仅上下文不计损失。",
+              )}
             </p>
             <div className="shortcuts">
-              空格 播放 / 暂停
-              <br />← → 逐帧 · [ ] 设置边界
+              {tr("空格 播放 / 暂停")}
               <br />
-              Tab 切换证据模式
+              {tr("← → 逐帧 · [ ] 设置边界")}
               <br />
-              Ctrl Z / Shift Z 撤销 / 重做
+              {tr("Tab 切换证据模式")}
+              <br />
+              {tr("Ctrl Z / Shift Z 撤销 / 重做")}
             </div>
           </aside>
         </main>
@@ -2866,22 +2989,23 @@ function App() {
       {dataset && page === "assist" && (
         <section className="settings">
           <span className="eyebrow">BEHAVIOR REVIEW</span>
-          <h1>校准与辅助审核</h1>
+          <h1>{tr("校准与辅助审核")}</h1>
           <p>
-            所有自动输出都保持
-            suggestion，须人工核对。状态字段请在状态模式修改。
+            {tr(
+              "所有自动输出都保持 suggestion，须人工核对。状态字段请在状态模式修改。",
+            )}
           </p>
           <div className="grid2">
             <article>
-              <h2>任务与几何参考</h2>
+              <h2>{tr("任务与几何参考")}</h2>
               {Object.entries({
-                target: "目标抓取部位",
-                support: "承接区域",
-                gripper_width: "夹爪最大开口宽度 W（注明单位）",
-                calibration_notes: "标定说明",
+                target: tr("目标抓取部位"),
+                support: tr("承接区域"),
+                gripper_width: tr("夹爪最大开口宽度 W（注明单位）"),
+                calibration_notes: tr("标定说明"),
               }).map(([k, label]) => (
                 <label key={k}>
-                  {label}
+                  {tr(label)}
                   <input
                     value={taskSettings[k]}
                     onChange={(e) =>
@@ -2890,7 +3014,7 @@ function App() {
                   />
                 </label>
               ))}
-              <h2>动作片段质量</h2>
+              <h2>{tr("动作片段质量")}</h2>
               <p>
                 EP {episode} · [{range[0]}, {range[1]})
               </p>
@@ -2912,7 +3036,7 @@ function App() {
                 </button>
               ))}
               <label>
-                原因
+                {tr("原因")}
                 <input
                   value={taskSettings.review_reason || ""}
                   onChange={(e) =>
@@ -2923,13 +3047,13 @@ function App() {
                   }
                 />
               </label>
-              <h2>手动事件</h2>
+              <h2>{tr("手动事件")}</h2>
               <select
                 value={assistArm}
                 onChange={(e) => setAssistArm(e.target.value)}
               >
-                <option value="left">左臂</option>
-                <option value="right">右臂</option>
+                <option value="left">{tr("左臂")}</option>
+                <option value="right">{tr("右臂")}</option>
               </select>
               {["open", "closed"].map((type) => (
                 <button
@@ -2947,17 +3071,20 @@ function App() {
                   #{frame} {type}
                 </button>
               ))}
-              <p>在行为复核时间轴点击候选可跳转。当前源帧 #{frame}。</p>
+              <p>
+                {tr("在行为复核时间轴点击候选可跳转。当前源帧 #")}
+                {frame}。
+              </p>
               {view?.events.map((ev: Obj) => (
                 <div className="event-row" key={ev.id}>
                   <span>
                     #{ev.frame} {ev.arm} · {ev.type} · {ev.status} ·{" "}
                     {JSON.parse(ev.details || "{}").feature === "action"
-                      ? "命令事件"
+                      ? tr("命令事件")
                       : JSON.parse(ev.details || "{}").feature ===
                           "observation.state"
-                        ? "实测反馈事件"
-                        : "人工事件"}
+                        ? tr("实测反馈事件")
+                        : tr("人工事件")}
                   </span>
                   <button
                     onClick={() => {
@@ -2966,7 +3093,7 @@ function App() {
                       setPage("work");
                     }}
                   >
-                    定位
+                    {tr("定位")}
                   </button>
                   <button
                     onClick={() => {
@@ -2979,7 +3106,7 @@ function App() {
                       setPage("work");
                     }}
                   >
-                    选择附近 ±0.5秒
+                    {tr("选择附近 ±0.5秒")}
                   </button>
                   <button
                     onClick={() =>
@@ -2994,7 +3121,7 @@ function App() {
                       })
                     }
                   >
-                    确认
+                    {tr("确认")}
                   </button>
                   <button
                     onClick={() =>
@@ -3009,27 +3136,27 @@ function App() {
                       })
                     }
                   >
-                    边界改为当前帧
+                    {tr("边界改为当前帧")}
                   </button>
                 </div>
               ))}
             </article>
             <article>
-              <h2>夹爪事件候选</h2>
+              <h2>{tr("夹爪事件候选")}</h2>
               <label>
-                来源
+                {tr("来源")}
                 <select
                   value={assistFeature}
                   onChange={(e) => setAssistFeature(e.target.value)}
                 >
                   <option value="observation.state">
-                    实测反馈 observation.state
+                    {tr("实测反馈 observation.state")}
                   </option>
-                  <option value="action">动作命令 action</option>
+                  <option value="action">{tr("动作命令 action")}</option>
                 </select>
               </label>
               <label>
-                具名通道
+                {tr("具名通道")}
                 <select
                   value={assistDim}
                   onChange={(e) => setAssistDim(+e.target.value)}
@@ -3044,19 +3171,19 @@ function App() {
                 </select>
               </label>
               <label>
-                单位
+                {tr("单位")}
                 <input
                   value={cal.unit}
                   onChange={(e) => setCal({ ...cal, unit: e.target.value })}
                 />
               </label>
               {[
-                ["closed_threshold", "闭合阈值"],
-                ["open_threshold", "打开阈值"],
-                ["min_duration", "最短持续秒"],
+                ["closed_threshold", tr("闭合阈值")],
+                ["open_threshold", tr("打开阈值")],
+                ["min_duration", tr("最短持续秒")],
               ].map(([key, label]) => (
                 <label key={key}>
-                  {label}
+                  {tr(label)}
                   <input
                     type="number"
                     step="0.001"
@@ -3073,7 +3200,7 @@ function App() {
                     setCal({ ...cal, closed_below: e.target.checked })
                   }
                 />
-                较小数值为闭合
+                {tr("较小数值为闭合")}
               </label>
               <label>
                 <input
@@ -3083,7 +3210,7 @@ function App() {
                     setCal({ ...cal, verified: e.target.checked })
                   }
                 />
-                已核对单位、方向与滞回配置
+                {tr("已核对单位、方向与滞回配置")}
               </label>
               <button
                 className="primary"
@@ -3099,15 +3226,16 @@ function App() {
                   });
                 }}
               >
-                生成事件建议
+                {tr("生成事件建议")}
               </button>
-              <h2>adviser 方向预标注</h2>
+              <h2>{tr("adviser 方向预标注")}</h2>
               <p>
-                规范基座系 +X前 / +Y左 /
-                +Z上；使用已审核、连续0.1–0.25秒实测位移。
+                {tr(
+                  "规范基座系 +X前 / +Y左 / +Z上；使用已审核、连续0.1–0.25秒实测位移。",
+                )}
               </p>
               <label>
-                坐标变换 4×4（JSON）
+                {tr("坐标变换 4×4（JSON）")}
                 <textarea
                   defaultValue={JSON.stringify(coordinate.transform)}
                   onBlur={(e) => {
@@ -3123,7 +3251,7 @@ function App() {
                 />
               </label>
               <label>
-                静止位置噪声（米）
+                {tr("静止位置噪声（米）")}
                 <input
                   type="number"
                   step="0.001"
@@ -3137,7 +3265,7 @@ function App() {
                 />
               </label>
               <label>
-                静止角噪声（弧度）
+                {tr("静止角噪声（弧度）")}
                 <input
                   type="number"
                   step="0.001"
@@ -3158,7 +3286,7 @@ function App() {
                     setCoordinate({ ...coordinate, verified: e.target.checked })
                   }
                 />
-                已验证米制单位与 robot_base 变换
+                {tr("已验证米制单位与 robot_base 变换")}
               </label>
               <button
                 onClick={async () => {
@@ -3176,10 +3304,11 @@ function App() {
                   }
                 }}
               >
-                计算当前帧建议
+                {tr("计算当前帧建议")}
               </button>
               {suggestion && (
                 <div className="batch-preview">
+                  {suggestion.reason && <p>{tr(suggestion.reason)}</p>}
                   <pre>{JSON.stringify(suggestion, null, 2)}</pre>
                   <button
                     disabled={!suggestion.values}
@@ -3204,7 +3333,7 @@ function App() {
                       notify("候选已保存为草稿，仍需人工审核");
                     }}
                   >
-                    接受为草稿
+                    {tr("接受为草稿")}
                   </button>
                 </div>
               )}
@@ -3223,22 +3352,25 @@ function App() {
       {dataset && page === "export" && (
         <section className="settings">
           <span className="eyebrow">PORTABLE LEROBOT v2.1</span>
-          <h1>导出独立片段数据集</h1>
+          <h1>{tr("导出独立片段数据集")}</h1>
           <p>
-            每个不连续中心区间成为独立 episode，携带真实历史、复核上下文、H.264
-            视频与分离标签。
+            {tr(
+              "每个不连续中心区间成为独立 episode，携带真实历史、复核上下文、H.264 视频与分离标签。",
+            )}
           </p>
           <div className="grid2">
             <article>
-              <h2>发布设置</h2>
+              <h2>{tr("发布设置")}</h2>
               <p>
-                训练默认历史：{historyConfig.horizon_seconds} 秒 /{" "}
-                {historyConfig.num_frames} 个时刻（含当前），可在主页修改。
+                {tr("训练默认历史：")}
+                {historyConfig.horizon_seconds}
+                {tr(" 秒 /")} {historyConfig.num_frames}
+                {tr(" 个时刻（含当前），可在主页修改。")}
               </p>
               <label>
-                保留前史（秒）
+                {tr("保留前史（秒）")}
                 <input
-                  aria-label="导出保留前史（秒）"
+                  aria-label={tr("导出保留前史（秒）")}
                   type="number"
                   min={historyConfig.horizon_seconds}
                   max="3600"
@@ -3248,18 +3380,20 @@ function App() {
                 />
               </label>
               <p>
-                可预留更长前史供实验使用。例如保留5秒后，训练可切换0.6秒或5秒并改变帧数；仅保留0.6秒的旧导出需重新导出才能实验5秒。
+                {tr(
+                  "可预留更长前史供实验使用。例如保留5秒后，训练可切换0.6秒或5秒并改变帧数；仅保留0.6秒的旧导出需重新导出才能实验5秒。",
+                )}
               </p>
               <label>
-                新目标目录
+                {tr("新目标目录")}
                 <input
-                  aria-label="导出目录"
+                  aria-label={tr("导出目录")}
                   value={destination}
                   onChange={(e) => setDestination(e.target.value)}
                 />
               </label>
               <label>
-                关键区域初始采样比例（不改变 loss mask）
+                {tr("关键区域初始采样比例（不改变 loss mask）")}
                 <input
                   type="number"
                   min={0}
@@ -3270,9 +3404,10 @@ function App() {
                 />
               </label>
               <p>
-                关键区域 {Math.round(ratio * 100)}% / 普通背景{" "}
-                {Math.round((1 - ratio) * 100)}%。同源片段保持
-                split_group；无有效标签的中心不抽样。
+                {tr("关键区域 ")}
+                {Math.round(ratio * 100)}
+                {tr("% / 普通背景")} {Math.round((1 - ratio) * 100)}
+                {tr("%。同源片段保持 split_group；无有效标签的中心不抽样。")}
               </p>
               <button
                 className="primary"
@@ -3295,7 +3430,7 @@ function App() {
                   }
                 }}
               >
-                开始后台导出
+                {tr("开始后台导出")}
               </button>
               {job && (
                 <div className="job">
@@ -3304,14 +3439,14 @@ function App() {
                   </h3>
                   <progress max={1} value={job.progress} />
                   <p>{job.destination}</p>
-                  {job.error && <p className="error">{job.error}</p>}
+                  {job.error && <p className="error">{tr(job.error)}</p>}
                   {["running", "queued"].includes(job.status) && (
                     <button
                       onClick={() =>
                         api("/jobs/" + job.id + "/cancel").catch(fail)
                       }
                     >
-                      取消导出
+                      {tr("取消导出")}
                     </button>
                   )}
                   {job.status === "complete" && (
@@ -3322,7 +3457,7 @@ function App() {
                           notify("导出路径已填入顶部，可导入重开");
                         }}
                       >
-                        填入导入路径
+                        {tr("填入导入路径")}
                       </button>
                       <button
                         className="primary"
@@ -3331,7 +3466,7 @@ function App() {
                           setPage("inspect");
                         }}
                       >
-                        可视化检查此导出
+                        {tr("可视化检查此导出")}
                       </button>
                       <pre>{JSON.stringify(job.summary, null, 2)}</pre>
                     </>
@@ -3340,7 +3475,7 @@ function App() {
               )}
             </article>
             <article>
-              <h2>选区与真实上下文</h2>
+              <h2>{tr("选区与真实上下文")}</h2>
               {dataset.episodes.map((e: Obj) => (
                 <div key={e.episode_index}>
                   <h3>EP {e.episode_index}</h3>
@@ -3349,9 +3484,12 @@ function App() {
                     : e.selections
                   )?.map((s: Obj) => (
                     <p key={s.id}>
-                      中心 [{s.start}, {s.end}) · {s.end - s.start} 帧<br />
+                      {tr("中心 [")}
+                      {s.start}, {s.end}) · {s.end - s.start}
+                      {tr(" 帧")}
+                      <br />
                       <small>
-                        预计保留{" "}
+                        {tr("预计保留")}{" "}
                         {Math.max(0, s.start / fps - historyCapacity).toFixed(
                           3,
                         )}
@@ -3360,19 +3498,21 @@ function App() {
                           (e.length - 1) / fps,
                           (s.end - 1) / fps + 0.25,
                         ).toFixed(3)}{" "}
-                        秒（按源时间最终确定）
+                        {tr("秒（按源时间最终确定）")}
                       </small>
                     </p>
                   ))}
                 </div>
               ))}
               <p>
-                草稿可增量导出；缺失值保留为 null，mask
-                0。验证报告列出完整、部分和无监督中心数量。
+                {tr(
+                  "草稿可增量导出；缺失值保留为 null，mask 0。验证报告列出完整、部分和无监督中心数量。",
+                )}
               </p>
               <p>
-                新增分类头见 annotations/head_spec.json。原生 LeRobot loader
-                读取标准数据，DSE wrapper 显式 join 标签。
+                {tr(
+                  "新增分类头见 annotations/head_spec.json。原生 LeRobot loader 读取标准数据，DSE wrapper 显式 join 标签。",
+                )}
               </p>
             </article>
           </div>
@@ -3381,13 +3521,16 @@ function App() {
       {visibleModal && (
         <div className="modal" onClick={() => setModal(null)}>
           <button className="modal-close" onClick={() => setModal(null)}>
-            关闭 ×
+            {tr("关闭 ×")}
           </button>
           <div className="modal-tools" onClick={(e) => e.stopPropagation()}>
             <button onClick={() => setScale((s) => Math.max(1, s - 0.5))}>
               −
             </button>
-            <span>{scale}× · 拖动平移</span>
+            <span>
+              {scale}
+              {tr("× · 拖动平移")}
+            </span>
             <button onClick={() => setScale((s) => Math.min(6, s + 0.5))}>
               ＋
             </button>

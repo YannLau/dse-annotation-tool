@@ -54,7 +54,7 @@ def directories(path="", show_hidden=False, initial=False):
     }
 
 
-def pick_directory(initial_path="", purpose="import"):
+def pick_directory(initial_path="", purpose="import", language="zh-CN"):
     if not _picker_lock.acquire(blocking=False):
         return {
             "status": "busy",
@@ -74,6 +74,12 @@ def pick_directory(initial_path="", purpose="import"):
             if purpose == "import"
             else "选择要检查的导出数据集文件夹"
         )
+        if language == "en":
+            title = (
+                "Select a dataset folder to import"
+                if purpose == "import"
+                else "Select an exported dataset folder to inspect"
+            )
         zenity = shutil.which("zenity") if sys.platform.startswith("linux") else None
         if zenity:
             command = [
