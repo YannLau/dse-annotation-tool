@@ -136,7 +136,7 @@ H=0、T=1 支持当前帧消融；T 包含当前，每时刻含全部三相机�
 
 只转换末端时使用 `ee_pose_features(valid_poses, verified_config)`：有效 `[...,7]` 反馈转成 `[...,9]`，与state维数无关；模型0.2.0直接复用此接口。先筛选有效位姿，避免padding的全零四元数或无效另一臂干扰。
 
-训练接入边界：图像尚未执行SigLIP processor归一化，本体转换须先筛选有效时刻，不能将padding的全零四元数当作真实输入。`training_statistics` 只统计指定训练来源的原始D维 state中心帧，不自动生成完整 D+18 维统计或标准化输入；`dse_model` 自行统计选定通道和历史。输入mask由后续网络执行、标签mask由损失函数执行。当前reader统一H/T并返回完整模态；同一batch需要一致输入布局。DSE默认适配器及当前模型仍要求三相机、双臂末端布局。详见 [训练规范与实现边界](../NOTES-Yann/innovation_research_handoff/DSE_OUTPUT_MODEL_TRAINING_SPEC_V1_2026-10-29.md)。
+训练接入边界：图像尚未执行SigLIP processor归一化，本体转换须先筛选有效时刻，不能将padding的全零四元数当作真实输入。`training_statistics` 只统计指定训练来源的原始D维 state中心帧，不自动生成完整 D+18 维统计或标准化输入；`dse_model` 自行统计选定通道和历史。输入mask由后续网络执行、标签mask由损失函数执行。当前reader统一H/T并返回完整模态；同一batch需要一致输入布局。DSE默认适配器及当前模型仍要求三相机、双臂末端布局。详见 [当前模型接入与实现边界](docs/STATE_LAYOUT_INTEGRATION.md)。
 
 2026-11-01 修正adviser候选：显著往返平移/旋转不再仅标记 `needs_review` 后保留确定的净方向/keep；受影响分量输出unknown，其他分量保留，规则版本为 `approved-displacement-2`。接受候选仍只保存草稿，不自动审核；已有草稿/标签不自动重写。
 

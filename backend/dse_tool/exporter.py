@@ -15,7 +15,8 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 from .dataset import Dataset, content_fingerprint
-from .schema import digest, head_spec, semantic_errors
+from .schema import digest, head_spec
+from . import __version__
 from .history import HistoryConfig
 
 
@@ -550,7 +551,10 @@ class Exporter:
                             channel_max = np.maximum(channel_max, flat.max(0))
                     mean = channel_sum / pixels
                     std = np.sqrt(np.maximum(0, channel_sq / pixels - mean * mean))
-                    shape = lambda v: np.asarray(v).reshape(3, 1, 1).tolist()
+
+                    def shape(v):
+                        return np.asarray(v).reshape(3, 1, 1).tolist()
+
                     per_stats[cam] = {
                         "min": shape(channel_min),
                         "max": shape(channel_max),
@@ -666,7 +670,10 @@ class Exporter:
                 squares = sum(p[1] for p in parts)
                 n = sum(p[2] for p in parts)
                 mean = sums / n
-                shape = lambda x: np.asarray(x).reshape(3, 1, 1).tolist()
+
+                def shape(x):
+                    return np.asarray(x).reshape(3, 1, 1).tolist()
+
                 stats[cam] = {
                     "min": shape(np.min([p[3] for p in parts], axis=0)),
                     "max": shape(np.max([p[4] for p in parts], axis=0)),
@@ -728,7 +735,7 @@ class Exporter:
             write_json(
                 ann / "manifest.json",
                 {
-                    "tool_version": "0.1.0",
+                    "tool_version": __version__,
                     "format": "LeRobot-v2.1+DSE-1",
                     "schema_version": schema["version"],
                     "schema_hash": digest(schema),

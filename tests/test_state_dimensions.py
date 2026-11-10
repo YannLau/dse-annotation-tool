@@ -5,6 +5,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
+from dse_tool import __version__
 from dse_tool.adapter import (
     DSEDataset,
     ee_pose_features,
@@ -47,6 +48,8 @@ def test_arbitrary_state_and_action_dimensions_survive_export(
     job = exporter.start(dataset, before, destination)
     exporter.threads[job["id"]].join(30)
     assert job["status"] == "complete", job
+    manifest = json.loads((destination / "annotations/manifest.json").read_text())
+    assert manifest["tool_version"] == __version__
     exported = Dataset(destination, tmp_path / "out-cache")
     exported.validate(decode=False)
     for key, size in dimensions.items():
