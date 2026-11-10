@@ -2,6 +2,8 @@
 
 [English](VALIDATION_EN.md) | 简体中文
 
+2026-11-10补充：Python包0.2.0完整回归 **66 passed**，新增可变维数、31维具名标量、独立末端转换及旧36维兼容验证。真实31维数据API导入、三相机首/中/末帧和导出重开结果见 [机器记录](named-scalar-real-validation.json)，两项目接口见 [接入说明](STATE_LAYOUT_INTEGRATION.md)。以下保留2026-10-31的历史验收数据，不表示本次重新运行了历史GPU或官方loader验收。
+
 实现与验证在独立目录 `dse_annotation_tool` 中完成，已执行 `git init`。原始数据目录只读。以下为实际执行结果，不是计划或模拟结果。
 
 ## 自动验证

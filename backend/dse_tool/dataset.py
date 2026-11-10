@@ -1,5 +1,6 @@
 import hashlib
 import json
+from numbers import Real
 import subprocess
 from collections import OrderedDict
 from pathlib import Path
@@ -341,11 +342,23 @@ class Dataset:
                     names = next(iter(names.values()))
                 if names and len(names) != f["shape"][0]:
                     raise ValueError("features.names 维度不匹配: " + key)
-                if f.get("names"):
+                state_vector = key in ("observation.state", "action")
+                if key == "observation.state" and (
+                    len(f["shape"]) != 1
+                    or type(f["shape"][0]) is not int
+                    or f["shape"][0] < 1
+                ):
+                    raise ValueError("状态必须声明正整数的一维向量shape: " + key)
+                if f.get("names") or state_vector:
                     expected = int(np.prod(f["shape"]))
                     if any(
-                        not isinstance(r[key], list)
-                        or np.asarray(r[key]).size != expected
+                        not (
+                            isinstance(r[key], list)
+                            and np.asarray(r[key]).size == expected
+                            or not state_vector
+                            and f["shape"] == [1]
+                            and isinstance(r[key], Real)
+                        )
                         for r in rows
                     ):
                         raise ValueError("数值特征维度错误: " + key)

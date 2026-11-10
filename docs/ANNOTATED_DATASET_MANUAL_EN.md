@@ -2,7 +2,7 @@
 
 English | [简体中文](ANNOTATED_DATASET_MANUAL_ZH.md)
 
-Date: 2026-11-03; interface language and English display properties updated on 2026-11-08. Covers the `LeRobot-v2.1+DSE-1` export format of this `dse_annotation_tool` project; the original export-protocol baseline checked was `9b1246f`. Actual exported files were also checked. This manual describes the current implementation. Later model, training, and protocol ideas in research documents are not automatically implemented features.
+Date: 2026-11-03; interface language updated on 2026-11-08; variable state dimensions, named scalars, and model APIs updated for 0.2.0 on 2026-11-10. Covers the `LeRobot-v2.1+DSE-1` export format of this `dse_annotation_tool` project; the original export-protocol baseline checked was `9b1246f`. Actual exported files were also checked. This manual describes the current implementation. Later model, training, and protocol ideas in research documents are not automatically implemented features.
 
 This manual is for annotators, recipients of exported data, and developers building DSE or VLA training programs. It explains what is added to the directory, what each field means, which labels can supervise training, which data is context only, and what training code must still handle.
 
@@ -765,8 +765,8 @@ Within retained ranges, original observation/action values and physical storage 
 
 | Column | Meaning | Export/training behavior |
 |---|---|---|
-| `observation.state` | 18D measured state, including both arms, grippers, and head joints | Values retained; read channel meanings from feature names rather than assuming another robot's 16D layout |
-| `action` | 18D demonstrated action/command vector | Values retained; rejected status/readiness does not correct them; excluded from DSE inputs |
+| `observation.state` | D-dimensional measured state; the current sample has 18 channels | Preserve all channels following feature shape/names; 16D and higher-dimensional states supported |
+| `action` | Source-defined demonstrated action/command vector; dimension may differ from state | Values retained; rejected status/readiness does not correct them; excluded from DSE inputs |
 | `observation.ee_pose_left/right` | Measured 7D end-effector pose per arm | Sample layout x/y/z/qx/qy/qz/qw; verify frame and units |
 | `observation.ee_pose_cmd_left/right` | Commanded 7D end-effector pose per arm | Command differs from measurement; excluded from DSE inputs |
 | `frame_index` | Frame within the new episode | Starts at 0 |
@@ -877,7 +877,7 @@ Let B be batch size, T history timestamp count, and S image size, default 256. T
 |---|---|---|
 | `images` | `[B,T,3,3,S,S]`, float32 | Batch, timestamp, camera, RGB channel, height, width; only resize/divide by 255, range `[0,1]` |
 | `image_valid_mask` | `[B,T,3]`, bool | Whether the timestamp/camera has actual input |
-| `state` | `[B,T,18]`, currently float64 | Measured state from the same history rows, without model standardization |
+| `state` | `[B,T,D]`, currently float64 | D comes from source metadata; measured history state without model standardization |
 | `state_valid_mask` | `[B,T]`, bool | Whether a historical row exists |
 | `ee_pose_feedback` | `[B,T,2,7]`, float64 | Left/right measured end-effector x/y/z/qx/qy/qz/qw |
 | `ee_pose_valid_mask` | `[B,T,2]`, bool | Whether the arm/time has a feedback field; not calibration/noise-quality certification |
@@ -909,7 +909,9 @@ Input masks currently mainly indicate row/field existence. Decoding/mapping fail
 
 ### 15.4 The 36D Proprioception Interface
 
-`proprioception36` combines each timestamp's 18D state and both measured end-effector poses:
+The general `proprioception(state, ee_pose, config)` accepts any positive state dimension D and produces D+18 features (34 for 16D state, 66 for 48D state), without modifying source data. The legacy `proprioception36` remains available for 18D state, as in the current sample:
+
+The independent `ee_pose_features(poses, config)` converts valid `[...,7]` feedback to `[...,9]` without state dependencies; model 0.2.0 shares this function. Version, lockfile, and update contracts are described in [State Layout and Model Integration](STATE_LAYOUT_INTEGRATION.md).
 
 ```text
 18D state + left(position3D + rotation6D) + right(position3D + rotation6D) = 36D
@@ -917,7 +919,7 @@ Input masks currently mainly indicate row/field existence. Decoding/mapping fail
 
 Rotation6D takes the first two columns of the canonical rotation matrix, not six extra joints. Configuration must explicitly provide `verified=true`, `unit="m"`, `frame="robot_base"`, and a verified 4×4 rigid transform. The function does not discover original units or convert them automatically.
 
-Filter to valid state/end-effector timestamps before conversion; padding's all-zero quaternions cannot be passed as real measurements. The function rejects invalid quaternions. Conversion and standardization are training-side operations; the tool has not rewritten original 18D data as 36D.
+Filter to valid state/end-effector timestamps before conversion; padding's all-zero quaternions cannot be passed as real measurements. The function rejects invalid quaternions. Exports retain original dimensions. In `dse_model`, use `preprocessing.state_exclude=["head_pitch_Joint","head_yaw_Joint"]` to ignore fixed head channels; names must match features.names. `state_fields` explicitly selects/orders channels, and the model saves the effective layout. Mixed raw dimensions require selected channels with matching meanings, order, and units. Extra finger joints can be retained; finger-level labels require explicit schema configuration.
 
 ## 16. Explicit Responsibilities of Training Code
 
@@ -974,16 +976,16 @@ This is a training-side illustration, not a complete loss/network already includ
 
 The reader only converts images to RGB, resizes, and scales to `[0,1]`. It does not apply the target visual checkpoint's full processor normalization. Training must use consistent model-required processing, avoiding division by 255 twice or different training/deployment pipelines.
 
-State/end-effector outputs are float64 and generally need explicit conversion to the model's floating type without converting category IDs or integer indices. Read names for the 18D layout rather than hard-coding sample gripper positions across robots.
+State/end-effector outputs are float64 and generally need explicit conversion to the model's floating type without converting category IDs or integer indices. Read state names rather than hard-coding sample gripper positions across robots.
 
-`training_statistics(reader, train_groups)` computes only **18D state at center frames** from the supplied training sources, deduplicated by source UUID+frame. It returns mean/std/count/split_groups:
+`training_statistics(reader, train_groups)` computes only **raw D-dimensional state at center frames** from supplied training sources, deduplicated by source UUID+frame. It returns mean/std/count/split_groups:
 
 ```python
 from dse_tool.adapter import training_statistics
 stats = training_statistics(reader, train_groups)
 ```
 
-It does not filter centers by label masks, cover the full historical input distribution or 36D features, create an image processor, or standardize a batch. Explicitly implement and record any other statistics convention. Training code handles zero-variance protection, derived end-effector statistics, modality selection, and application of normalization.
+It does not filter centers by label masks, cover the full historical input distribution or D+18 features, create an image processor, or standardize a batch. Explicitly implement and record any other statistics convention. Training code handles zero-variance protection, derived end-effector statistics, modality selection, and application of normalization.
 
 ### 16.4 Review Evidence After Changing History or Modalities
 
@@ -1162,7 +1164,7 @@ Paths below are relative to this manual in docs:
 | [api.py](../backend/dse_tool/api.py) | State/behavior evidence isolation, provenance, re-import, review, and candidate APIs |
 | [history.py](../backend/dse_tool/history.py) | H/T and at_or_before sampling |
 | [dataset.py](../backend/dse_tool/dataset.py) | Content identity, media mapping, history loading, and source inheritance |
-| [adapter.py](../backend/dse_tool/adapter.py) | Actual batches, category encoding, 36D conversion, and statistics boundaries |
+| [adapter.py](../backend/dse_tool/adapter.py) | Actual batches, category encoding, D+18 conversion/legacy 36D interface, and statistics boundaries |
 | [assist.py](../backend/dse_tool/assist.py), [review.py](../backend/dse_tool/review.py) | Event/adviser candidates, review semantics, and evidence settings |
 | [default.json](../schemas/default.json) | Default dictionary and Chinese semantic instructions |
 | [main.tsx](../frontend/src/main.tsx) | UI settings, project preferences, and evidence saved when accepting candidates |

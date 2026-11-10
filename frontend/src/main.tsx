@@ -1623,7 +1623,15 @@ function App() {
   );
   const descriptor = (t: string) => {
     const [key, dim] = t.split(":");
-    return `${tr(key === "action" ? "指令 action" : key.includes("cmd") ? "末端命令" : key === "observation.state" ? "实测 state" : "末端反馈")} · ${featureNames(dataset?.info.features[key])[+dim]}`;
+    const label =
+      key === "action"
+        ? tr("指令 action")
+        : key === "observation.state"
+          ? tr("实测 state")
+          : key.startsWith("observation.ee_pose_")
+            ? tr(key.includes("cmd") ? "末端命令" : "末端反馈")
+            : key;
+    return `${label} · ${featureNames(dataset?.info.features[key])[+dim]}`;
   };
   function fieldPanel(arm: string) {
     return (

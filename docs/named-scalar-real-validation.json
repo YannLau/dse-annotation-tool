@@ -1,0 +1,79 @@
+{
+  "source": "/home/punk/下载/lerobot_limx-tron2%2Flerobot_dataset_20261109_192419/lerobot_dataset",
+  "source_fingerprint_before": "d8e247b52c840aa2089df42c34899ad083e67e17905eb0bf17ed049d645e19ad",
+  "source_fingerprint_after": "d8e247b52c840aa2089df42c34899ad083e67e17905eb0bf17ed049d645e19ad",
+  "source_unchanged": true,
+  "import_http_status": 200,
+  "state_dim": 31,
+  "frames": 439,
+  "cameras": 3,
+  "images_checked": [
+    {
+      "frame": 0,
+      "camera": 0,
+      "bytes": 47793
+    },
+    {
+      "frame": 0,
+      "camera": 1,
+      "bytes": 35986
+    },
+    {
+      "frame": 0,
+      "camera": 2,
+      "bytes": 33817
+    },
+    {
+      "frame": 219,
+      "camera": 0,
+      "bytes": 47128
+    },
+    {
+      "frame": 219,
+      "camera": 1,
+      "bytes": 33083
+    },
+    {
+      "frame": 219,
+      "camera": 2,
+      "bytes": 32730
+    },
+    {
+      "frame": 438,
+      "camera": 0,
+      "bytes": 48348
+    },
+    {
+      "frame": 438,
+      "camera": 1,
+      "bytes": 33771
+    },
+    {
+      "frame": 438,
+      "camera": 2,
+      "bytes": 33970
+    }
+  ],
+  "named_scalar_type": "double",
+  "named_scalar_metadata": {
+    "dtype": "float32",
+    "shape": [
+      1
+    ],
+    "names": [
+      "is_intervention"
+    ]
+  },
+  "behavior_scalar_track": true,
+  "export_centers": 3,
+  "export_retained_frames": 28,
+  "scalar_values_and_physical_type_preserved": true,
+  "reimport_http_status": 200,
+  "inspector_http_status": 200,
+  "adapter_state_shape": [
+    2,
+    4,
+    31
+  ],
+  "semantic_labels_created": false
+}

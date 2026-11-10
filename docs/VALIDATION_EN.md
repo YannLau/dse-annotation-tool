@@ -2,6 +2,8 @@
 
 English | [简体中文](VALIDATION.md)
 
+2026-11-10 update: Python package 0.2.0 passed **66 tests**, covering variable dimensions, named scalars in 31D data, shared pose conversion, and legacy 36D compatibility. See the [real 31D report](named-scalar-real-validation.json) and [integration contract](STATE_LAYOUT_INTEGRATION.md). The original 2026-10-31 acceptance results below remain historical; prior GPU/official-loader validation was not rerun for this update.
+
 Implementation and validation were performed in the separate `dse_annotation_tool` directory, with `git init` completed. The original dataset directory was read-only. The following records actual execution results, rather than plans or simulated outcomes.
 
 ## Automated Validation

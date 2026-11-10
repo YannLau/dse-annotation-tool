@@ -176,51 +176,73 @@ class DSEDataset:
         )
 
 
-def proprioception36(state, ee_pose, config):
-    """18D state + (position3, rotation first two columns6) × 2."""
+def ee_pose_features(ee_pose, config):
+    """Convert valid [...,7] feedback poses to [...,9], independently of state layout."""
     if (
         not config.get("verified")
         or config.get("unit") != "m"
         or config.get("frame") != "robot_base"
     ):
         raise ValueError("规范坐标/单位未验证，请保留 raw 数据")
-    state = np.asarray(state)
-    poses = np.asarray(ee_pose)
-    if state.shape[-1] != 18 or poses.shape[-2:] != (2, 7):
-        raise ValueError("36D接口需要18维state和双臂7维反馈")
-    transform = np.asarray(config["transform"], dtype=float)
+    poses = np.asarray(ee_pose, dtype=float)
+    if poses.ndim < 1 or poses.shape[-1] != 7:
+        raise ValueError("末端位姿必须为[...,7]的位置和四元数反馈")
+    if not np.isfinite(poses).all():
+        raise ValueError("末端位姿含非有限数值")
+    transform = np.asarray(config.get("transform"), dtype=float)
     if (
         transform.shape != (4, 4)
+        or not np.allclose(transform[3], [0, 0, 0, 1])
         or not np.allclose(
             transform[:3, :3] @ transform[:3, :3].T, np.eye(3), atol=1e-5
         )
         or not np.isclose(np.linalg.det(transform[:3, :3]), 1)
     ):
         raise ValueError("无效刚体变换")
-    result = [state]
-    for arm in range(2):
-        p = poses[..., arm, :3] @ transform[:3, :3].T + transform[:3, 3]
-        q = poses[..., arm, 3:]
-        norm = np.linalg.norm(q, axis=-1, keepdims=True)
-        if np.any(norm < 1e-8):
-            raise ValueError("无效四元数")
-        x, y, z, w = np.moveaxis(q / norm, -1, 0)
-        col1 = (
-            np.stack(
-                [1 - 2 * (y * y + z * z), 2 * (x * y + z * w), 2 * (x * z - y * w)],
-                axis=-1,
-            )
-            @ transform[:3, :3].T
+    p = poses[..., :3] @ transform[:3, :3].T + transform[:3, 3]
+    q = poses[..., 3:]
+    norm = np.linalg.norm(q, axis=-1, keepdims=True)
+    if np.any(norm < 1e-8):
+        raise ValueError("无效四元数")
+    x, y, z, w = np.moveaxis(q / norm, -1, 0)
+    col1 = (
+        np.stack(
+            [1 - 2 * (y * y + z * z), 2 * (x * y + z * w), 2 * (x * z - y * w)],
+            axis=-1,
         )
-        col2 = (
-            np.stack(
-                [2 * (x * y - z * w), 1 - 2 * (x * x + z * z), 2 * (y * z + x * w)],
-                axis=-1,
-            )
-            @ transform[:3, :3].T
+        @ transform[:3, :3].T
+    )
+    col2 = (
+        np.stack(
+            [2 * (x * y - z * w), 1 - 2 * (x * x + z * z), 2 * (y * z + x * w)],
+            axis=-1,
         )
-        result.extend([p, col1, col2])
-    return np.concatenate(result, axis=-1)
+        @ transform[:3, :3].T
+    )
+    return np.concatenate([p, col1, col2], axis=-1)
+
+
+def proprioception(state, ee_pose, config):
+    """D-dimensional recorded state + two (position3, rotation6) feedback poses."""
+    state = np.asarray(state)
+    poses = np.asarray(ee_pose)
+    if (
+        state.ndim < 1
+        or state.shape[-1] < 1
+        or poses.shape[-2:] != (2, 7)
+        or state.shape[:-1] != poses.shape[:-2]
+    ):
+        raise ValueError("本体接口需要D维state和相同前导维度的双臂7维反馈")
+    feedback = ee_pose_features(poses, config)
+    return np.concatenate([state, feedback.reshape((*state.shape[:-1], 18))], axis=-1)
+
+
+def proprioception36(state, ee_pose, config):
+    """Compatibility interface for existing 18D-state / 36D-feature consumers."""
+    state = np.asarray(state)
+    if state.ndim < 1 or state.shape[-1] != 18:
+        raise ValueError("36D接口需要18维state；其他维度请使用proprioception")
+    return proprioception(state, ee_pose, config)
 
 
 def training_statistics(dataset, split_groups):

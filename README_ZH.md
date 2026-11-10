@@ -10,6 +10,8 @@
 
 标注后新增哪些文件、各列含义及训练接入注意事项，见[《DSE 标注后 LeRobot v2.1 数据集说明书》](docs/ANNOTATED_DATASET_MANUAL_ZH.md)。
 
+Python包0.2.0支持可变状态维数和具名单通道标量，并提供与模型共用的独立末端转换接口。数据契约、兼容接口及跨仓库更新顺序见 [状态布局与模型接入](docs/STATE_LAYOUT_INTEGRATION.md)。
+
 ## 启动
 
 需要 Python 3.12、Node.js 20.19+/22.12+、uv、ffmpeg/ffprobe。已安装本项目独立环境及前端依赖，可直接运行：
@@ -32,12 +34,14 @@ cd /home/punk/yann_repo/paper_code_01/dse_annotation_tool
 首次安装或源码修改后的构建：
 
 ```bash
-uv sync --frozen --group dev
+uv sync --locked --group dev
 (cd frontend && npm ci && npm run build)
 ./scripts/run.sh --work ./workspaces/my-project
 ```
 
 依赖固定在 `uv.lock`、`frontend/package-lock.json`。运行脚本清除外部 `PYTHONPATH`，避免当前机器的 ROS Python 路径污染。只在首次安装依赖时需要网络；已安装后浏览、编辑、导出、重开均可离线执行。
+
+更新已有安装也执行上述同步与构建命令，然后停止旧服务、沿用相同 `--work` 重新启动并刷新页面。已运行的Python进程不会自动加载修改。模型项目另有独立环境与锁文件，更新本工具不会自动更新模型依赖。
 
 ## 使用步骤
 
@@ -102,7 +106,7 @@ annotations/
 ## 接入 DSE
 
 ```python
-from dse_tool.adapter import DSEDataset, proprioception36, training_statistics
+from dse_tool.adapter import DSEDataset, proprioception, training_statistics
 
 reader = DSEDataset('/path/to/export', cache='/path/to/work/cache/dse')
 # 默认继承 manifest；实验时可覆盖（导出须预留至少5秒前史）：
@@ -111,7 +115,7 @@ reader = DSEDataset('/path/to/export', cache='/path/to/work/cache/dse')
 batch = reader.batch([0, 1])
 # images: [B,T,3,3,256,256]，默认 T=4, RGB float32 [0,1]
 # image_valid_mask: [B,T,3]
-# state: [B,T,18] 原始精度；state_valid_mask 屏蔽不足历史
+# state: [B,T,D]，D由源数据决定（当前Tron2样例18）；state_valid_mask 屏蔽不足历史
 # ee_pose_feedback: [B,T,2,7]，另有 ee_pose_valid_mask
 # labels / loss_masks: arm -> field_id -> 整数数组
 # history_target_offsets / history_actual_offsets: [B,T]，相对当前秒数；缺失实际时间 NaN，时间编码前按 mask 清零
@@ -124,9 +128,15 @@ H=0、T=1 支持当前帧消融；T 包含当前，每时刻含全部三相机�
 
 适配器校验 annotations 校验和，并重新使用共享规则引擎校验 mask。稳定类别 ID 不必连续，训练分类头顺序见 head_spec 的 class_ids；需要时使用 `encode_class_targets` 转为交叉熵索引。若训练环境安装 PyTorch，可用 `to_torch_batch` 递归转换 NumPy 数组。
 
-`proprioception36(state, ee_pose_feedback, verified_config)` 提供18维state + 双臂各位置3维/旋转6维的接口。配置须明确 `verified=true, unit='m', frame='robot_base', transform=4×4刚体矩阵`；未验证会拒绝规范化，原始反馈仍可读取。该工具不训练模型、不改执行代码、不连接真机。裁剪集不是完整 VLA 动作块的自动替代。
+标注、遥测与导出按 `meta/info.json` 的 `features.shape/names` 处理状态/动作向量，支持16维及更多自由度；state 与 action 不必同维。导出保留全部原始通道和值，不自动删除固定头部、补零或截断。下游 `dse_model` 可通过 `preprocessing.state_exclude` 排除头部，或用 `state_fields` 显式选择及排序通道；这是模型输入视图，不改变导出数据。默认标签仍描述左右臂/整体抓取状态，增加手指自由度不自动增加逐指标签。
 
-训练接入边界：图像尚未执行SigLIP processor归一化，36D转换须先筛选有效时刻，不能将padding的全零四元数当作真实输入。`training_statistics` 当前只统计指定训练来源的18D state中心帧，不自动生成完整36D统计或标准化输入。输入mask由后续网络执行、标签mask由损失函数执行。当前reader统一H/T并返回完整模态；纯图像/模态分支开关、混合H/T模型训练及变长collate均属于后续模型实现。详见 [训练规范与实现边界](../NOTES-Yann/innovation_research_handoff/DSE_OUTPUT_MODEL_TRAINING_SPEC_V1_2026-10-29.md)。
+单通道附加特征即使有 `names` 且声明 `shape=[1]`，也可以在 Parquet 中保存为标量，例如 `complementary_info.is_intervention=0.0`；也接受 `[0.0]`。曲线接口统一显示为单通道数组，导出保留原物理存储形式，state/action 仍按向量校验。31维灵巧手真实数据的导入、三相机首/中/末帧、裁剪导出及重开验证见 [验证记录](docs/named-scalar-real-validation.json)。
+
+`proprioception(state, ee_pose_feedback, verified_config)` 提供D维state + 双臂各位置3维/旋转6维的接口，输出 D+18 维；旧 `proprioception36` 保留为18维state的兼容接口。配置须明确 `verified=true, unit='m', frame='robot_base', transform=4×4刚体矩阵`；未验证会拒绝规范化，原始反馈仍可读取。该工具不训练模型、不改执行代码、不连接真机。裁剪集不是完整 VLA 动作块的自动替代。
+
+只转换末端时使用 `ee_pose_features(valid_poses, verified_config)`：有效 `[...,7]` 反馈转成 `[...,9]`，与state维数无关；模型0.2.0直接复用此接口。先筛选有效位姿，避免padding的全零四元数或无效另一臂干扰。
+
+训练接入边界：图像尚未执行SigLIP processor归一化，本体转换须先筛选有效时刻，不能将padding的全零四元数当作真实输入。`training_statistics` 只统计指定训练来源的原始D维 state中心帧，不自动生成完整 D+18 维统计或标准化输入；`dse_model` 自行统计选定通道和历史。输入mask由后续网络执行、标签mask由损失函数执行。当前reader统一H/T并返回完整模态；同一batch需要一致输入布局。DSE默认适配器及当前模型仍要求三相机、双臂末端布局。详见 [训练规范与实现边界](../NOTES-Yann/innovation_research_handoff/DSE_OUTPUT_MODEL_TRAINING_SPEC_V1_2026-10-29.md)。
 
 2026-11-01 修正adviser候选：显著往返平移/旋转不再仅标记 `needs_review` 后保留确定的净方向/keep；受影响分量输出unknown，其他分量保留，规则版本为 `approved-displacement-2`。接受候选仍只保存草稿，不自动审核；已有草稿/标签不自动重写。
 

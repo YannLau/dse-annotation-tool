@@ -2,7 +2,7 @@
 
 [English](ANNOTATED_DATASET_MANUAL_EN.md) | 简体中文
 
-日期：2026-11-03；2026-11-08 更新界面语言与英文显示属性。适用于当前项目 `dse_annotation_tool` 的 `LeRobot-v2.1+DSE-1` 导出格式；导出协议初次核对代码基线为 `9b1246f`。本文同时核对了实际导出文件，描述当前实现。研究文档中的后续模型、训练与协议设想，不自动等于已经实现的功能。
+日期：2026-11-03；2026-11-08 更新界面语言；2026-11-10更新0.2.0的可变状态维数、具名标量及模型接口。适用于当前项目 `dse_annotation_tool` 的 `LeRobot-v2.1+DSE-1` 导出格式；导出协议初次核对代码基线为 `9b1246f`。本文同时核对了实际导出文件，描述当前实现。研究文档中的后续模型、训练与协议设想，不自动等于已经实现的功能。
 
 本文面向三类读者：负责标注的人、接收导出数据的人、编写 DSE 或 VLA 训练程序的人。阅读后应能回答：目录里多了什么、每个字段是什么意思、哪些标签能训练、哪些数据只能用作上下文，以及训练端还必须做哪些处理。
 
@@ -765,8 +765,8 @@ segments 的各键：
 
 | 列                                   | 意义                                      | 导出处理及训练注意                                                            |
 | ------------------------------------ | ----------------------------------------- | ----------------------------------------------------------------------------- |
-| `observation.state`                  | 18 维实测状态，含两臂、夹爪与头部关节通道 | 保留数值；通道含义读取 info.features 的 names，不默认为其他机器人的 16 维布局 |
-| `action`                             | 18 维示教动作/命令向量                    | 保留原值，不因 rejected 或 readiness 自动改成正确动作；DSE 输入不读它         |
+| `observation.state`                  | D 维实测状态；当前样例18维，含两臂、夹爪与头部 | 按 info.features 的 shape/names 保留全部通道；支持16维及更多自由度 |
+| `action`                             | 源数据定义的示教动作/命令向量，维数可不同于state | 保留原值，不因 rejected 或 readiness 自动改成正确动作；DSE 输入不读它 |
 | `observation.ee_pose_left/right`     | 每臂 7 维实测末端位姿                     | 默认样例为 x/y/z/qx/qy/qz/qw；坐标系、单位需核实                              |
 | `observation.ee_pose_cmd_left/right` | 每臂 7 维命令末端位姿                     | 命令不等于实测，DSE 输入不读它                                                |
 | `frame_index`                        | 新 episode 内帧号                         | 从 0 开始                                                                     |
@@ -877,7 +877,7 @@ encoded = encode_class_targets(batch["labels"], reader.schema)
 | ------------------------ | ---------------------------- | -------------------------------------------------------------------------------- |
 | `images`                 | `[B,T,3,3,S,S]`，float32     | 依次为 batch、时刻、相机、RGB 通道、高、宽；当前只 resize 和除 255，范围 `[0,1]` |
 | `image_valid_mask`       | `[B,T,3]`，bool              | 对应时刻/相机是否有实际输入                                                      |
-| `state`                  | `[B,T,18]`，当前实现 float64 | 按相同历史行取出的实测状态，尚未做模型标准化                                     |
+| `state`                  | `[B,T,D]`，当前实现 float64 | D由源数据决定；按相同历史行取出的实测状态，尚未做模型标准化 |
 | `state_valid_mask`       | `[B,T]`，bool                | 历史行是否存在                                                                   |
 | `ee_pose_feedback`       | `[B,T,2,7]`，float64         | 左/右实测末端 x/y/z/qx/qy/qz/qw                                                  |
 | `ee_pose_valid_mask`     | `[B,T,2]`，bool              | 对应臂/时刻的反馈字段是否存在；不是已标定或噪声合格证明                          |
@@ -909,7 +909,9 @@ encoded = encode_class_targets(batch["labels"], reader.schema)
 
 ### 15.4 36D 本体接口是什么
 
-`proprioception36` 可把每个时刻的 18D state 与双臂末端反馈组合为：
+通用接口 `proprioception(state, ee_pose, config)` 支持任意正整数 D 维 state，输出 `D+18` 维（16维状态对应34维，48维对应66维）。它不改写源数据。旧 `proprioception36` 保留兼容，只接受18维state，对应当前样例：
+
+独立的 `ee_pose_features(poses, config)` 将有效的 `[...,7]` 反馈转换为 `[...,9]`，不依赖state维数，模型0.2.0直接调用它。标注工具和模型的版本、锁文件及更新步骤见 [接入说明](STATE_LAYOUT_INTEGRATION.md)。
 
 ```text
 18D state + 左臂(位置3D + 旋转6D) + 右臂(位置3D + 旋转6D) = 36D
@@ -917,7 +919,7 @@ encoded = encode_class_targets(batch["labels"], reader.schema)
 
 旋转 6D 取规范旋转矩阵的前两列，不是再增加 6 个关节。配置必须明确 `verified=true`、`unit="m"`、`frame="robot_base"` 和经核实的 4×4 刚体变换；它不会自动发现原始单位或进行单位换算。
 
-先筛选真实有效的 state/末端时刻再转换，不能把 padding 的全零四元数传入。函数会拒绝无效四元数。转换和标准化后的特征是训练侧产生的，不是工具已将原始 18D 数据改写成 36D。
+先筛选真实有效的 state/末端时刻再转换，不能把 padding 的全零四元数传入。函数会拒绝无效四元数。转换和标准化后的特征是训练侧产生的，导出保留原始维数。固定头部可在 `dse_model` 配置 `preprocessing.state_exclude=["head_pitch_Joint","head_yaw_Joint"]`；名称须来自各自 features.names。`state_fields` 可显式选择及排序通道，模型保存有效布局；不同原始维数只有在选定通道含义、顺序和单位一致时才能合并训练。灵巧手可保留全部额外关节，逐指标签需另行配置。
 
 ## 16. 训练时必须明确处理的事项
 
@@ -974,16 +976,16 @@ def masked_head_loss(logits, encoded_targets, loss_mask):
 
 当前 reader 图像只完成 RGB、resize 和 `[0,1]` 缩放，未执行目标视觉 checkpoint 的完整 processor 归一化。训练端要按模型要求做一致预处理，避免重复除 255 或训练/部署不同处理。
 
-state/末端当前返回 float64，模型通常需要显式转换为目标浮点类型；转换不应混入类别和整数索引。18D 布局读取 names，不能凭夹爪在样例中的位置写死跨机器人映射。
+state/末端当前返回 float64，模型通常需要显式转换为目标浮点类型；转换不应混入类别和整数索引。状态布局读取 names，不能凭夹爪在样例中的位置写死跨机器人映射。
 
-`training_statistics(reader, train_groups)` 只统计指定训练来源里、按源 UUID+源帧去重的**中心帧 18D state**，返回 mean/std/count/split_groups：
+`training_statistics(reader, train_groups)` 只统计指定训练来源里、按源 UUID+源帧去重的**中心帧原始 D维 state**，返回 mean/std/count/split_groups：
 
 ```python
 from dse_tool.adapter import training_statistics
 stats = training_statistics(reader, train_groups)
 ```
 
-它不按标签 mask 筛成“仅有监督的中心”，不统计完整历史输入分布或完整 36D，不生成图像 processor，也不自动标准化 batch。若训练使用不同统计口径，应显式实现并记录；零方差保护、末端派生量统计、模态选择与应用都由训练端完成。
+它不按标签 mask 筛成“仅有监督的中心”，不统计完整历史输入分布或完整 D+18维特征，不生成图像 processor，也不自动标准化 batch。若训练使用不同统计口径，应显式实现并记录；零方差保护、末端派生量统计、模态选择与应用都由训练端完成。
 
 ### 16.4 改变历史或输入模态后，要复核证据是否仍够
 

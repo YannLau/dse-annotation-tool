@@ -3,6 +3,7 @@ import json
 import threading
 import logging
 from logging.handlers import RotatingFileHandler
+from numbers import Real
 import subprocess
 import av
 from pathlib import Path
@@ -12,6 +13,7 @@ from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from . import __version__
 from .dataset import Dataset, content_fingerprint, verify_manifest
 from .exporter import Exporter
 from .store import Store
@@ -123,7 +125,7 @@ class ReviewRequest(BaseModel):
 
 
 def create_app(work_root):
-    app = FastAPI(title="DSE Annotation Tool", version="0.1.0")
+    app = FastAPI(title="DSE Annotation Tool", version=__version__)
     store = Store(work_root)
     log_dir = store.root / "logs"
     log_dir.mkdir(exist_ok=True)
@@ -579,11 +581,18 @@ def create_app(work_root):
         for i in range(lo, hi):
             r = {"frame": i, "timestamp": rows[i]["timestamp"]}
             for k, v in rows[i].items():
-                if isinstance(v, list) and (
+                feature = ds.info["features"].get(k, {})
+                named_scalar = (
+                    isinstance(v, Real)
+                    and feature.get("shape") == [1]
+                    and feature.get("names")
+                )
+                if (isinstance(v, list) or named_scalar) and (
                     mode == "behavior"
                     or (k.startswith("observation.") and "cmd" not in k)
                 ):
-                    r[k] = v
+                    # 曲线统一接收通道数组；源 Parquet 的标量存储保持原样。
+                    r[k] = v if isinstance(v, list) else [v]
             telemetry.append(r)
         tracks = []
         if mode == "behavior":

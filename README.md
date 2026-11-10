@@ -10,6 +10,8 @@ See [Interface Language Switching](docs/UI_LANGUAGE_2026-11-08_EN.md) for updati
 
 For the files added by annotation, column definitions, and training integration requirements, see the [DSE-Annotated LeRobot v2.1 Dataset Manual](docs/ANNOTATED_DATASET_MANUAL_EN.md).
 
+Python package 0.2.0 supports variable state dimensions, named scalar channels, and a state-independent pose conversion API shared with the model. See [State Layout and Model Integration](docs/STATE_LAYOUT_INTEGRATION.md) for contracts, compatibility, validation, and cross-repository updates.
+
 ## Launch
 
 Requires Python 3.12, Node.js 20.19+/22.12+, uv, and ffmpeg/ffprobe. With the project's isolated environment and frontend dependencies already installed, run:
@@ -32,7 +34,7 @@ For development, run `cd frontend && npm run dev` in another terminal and open t
 First installation, or rebuilding after source changes:
 
 ```bash
-uv sync --frozen --group dev
+uv sync --locked --group dev
 (cd frontend && npm ci && npm run build)
 ./scripts/run.sh --work ./workspaces/my-project
 ```
@@ -103,7 +105,7 @@ Exports contain all videos without symlinks to original paths and can be copied 
 ## DSE Integration
 
 ```python
-from dse_tool.adapter import DSEDataset, proprioception36, training_statistics
+from dse_tool.adapter import DSEDataset, proprioception, training_statistics
 
 reader = DSEDataset('/path/to/export', cache='/path/to/work/cache/dse')
 # Inherit the manifest by default; override for an experiment only if
@@ -113,7 +115,7 @@ reader = DSEDataset('/path/to/export', cache='/path/to/work/cache/dse')
 batch = reader.batch([0, 1])
 # images: [B,T,3,3,256,256], default T=4, RGB float32 [0,1]
 # image_valid_mask: [B,T,3]
-# state: [B,T,18], original precision; state_valid_mask marks unavailable history
+# state: [B,T,D], D from source metadata (18 in the Tron2 sample); history has a validity mask
 # ee_pose_feedback: [B,T,2,7], with ee_pose_valid_mask
 # labels / loss_masks: arm -> field_id -> integer arrays
 # history_target_offsets / history_actual_offsets: [B,T], relative seconds;
@@ -127,9 +129,15 @@ H=0, T=1 supports current-frame-only ablation. T includes the current frame, wit
 
 The adapter verifies annotation checksums and rechecks masks with the shared rule engine. Stable category IDs need not be contiguous; classification output order comes from head_spec's class_ids. Use `encode_class_targets` when cross-entropy indices are needed. With PyTorch installed in the training environment, `to_torch_batch` recursively converts NumPy arrays.
 
-`proprioception36(state, ee_pose_feedback, verified_config)` combines 18D state with position3/rotation6 for each arm. Configuration must specify `verified=true, unit='m', frame='robot_base', transform=<4×4 rigid transform>`. Unverified canonicalization is rejected; raw feedback remains readable. The tool does not train models, change execution code, or connect to a physical robot. A cropped dataset is not an automatic substitute for complete VLA action chunks.
+Annotation, telemetry, and export follow `features.shape/names`, supporting 16D and higher-dimensional state/action vectors. State and action need not have equal dimensions. Exports preserve all original channels and values. The downstream `dse_model` can exclude fixed head channels with `preprocessing.state_exclude` or select/order channels with `state_fields`, without changing exports. More finger joints do not automatically create finger-level labels; default labels still describe each arm/whole-hand grasp.
 
-Training integration boundaries: images have not undergone SigLIP processor normalization. Filter valid timestamps before 36D conversion; padding's zero quaternions are not real inputs. `training_statistics` currently covers only 18D state at center frames from the supplied training sources; it does not generate full 36D statistics or standardize inputs. The later network must apply input masks, and the loss function must apply label masks. A reader currently uses uniform H/T and returns all modalities. Image-only/modality branches, mixed-H/T model training, and variable-length collate require later model implementation. See the [Training Specification and Implementation Boundaries (Chinese)](../NOTES-Yann/innovation_research_handoff/DSE_OUTPUT_MODEL_TRAINING_SPEC_V1_2026-10-29.md).
+Named one-channel auxiliary features declared as `shape=[1]` may be stored as Parquet scalars, such as `complementary_info.is_intervention=0.0`, or as `[0.0]`. Telemetry presents either as a single channel; export preserves the original physical representation. State/action continue to require vectors. See the [real 31D validation report](docs/named-scalar-real-validation.json) covering import, first/middle/last images from three cameras, cropped export, and reopening.
+
+`proprioception(state, ee_pose_feedback, verified_config)` combines D-dimensional state with position3/rotation6 for each arm, producing D+18 features. The original `proprioception36` remains a compatibility interface for 18D state. Configuration must specify `verified=true, unit='m', frame='robot_base', transform=<4×4 rigid transform>`. Unverified canonicalization is rejected; raw feedback remains readable. The tool does not train models, change execution code, or connect to a physical robot. A cropped dataset is not an automatic substitute for complete VLA action chunks.
+
+For pose-only conversion, `ee_pose_features(valid_poses, verified_config)` maps valid `[...,7]` feedback to `[...,9]` independently of state dimensions; model 0.2.0 shares this API. Filter valid poses first so padding quaternions or a missing arm cannot affect another arm. Existing installations need the sync/build steps above and a service restart with the same `--work`; updating this project does not update the model's separate environment or lockfile.
+
+Training integration boundaries: images have not undergone SigLIP processor normalization. Filter valid timestamps before proprioception conversion; padding's zero quaternions are not real inputs. `training_statistics` covers raw D-dimensional state at center frames from supplied training sources, without full D+18 statistics or standardization; `dse_model` separately fits selected channels and history. Networks apply input masks and losses apply label masks. A reader uses uniform H/T and returns all modalities; batches need consistent input layouts. The default DSE adapter and current model still require three cameras and the dual-arm pose layout. See the [Training Specification and Implementation Boundaries (Chinese)](../NOTES-Yann/innovation_research_handoff/DSE_OUTPUT_MODEL_TRAINING_SPEC_V1_2026-10-29.md).
 
 2026-11-01 adviser-candidate correction: significant out-and-back translation/rotation no longer merely sets `needs_review` while retaining a definite net direction/keep. Affected components become unknown; other components remain. The rule version is `approved-displacement-2`. Accepting a candidate still saves only a draft without automatic review; existing drafts/labels are not rewritten.
 
