@@ -1,6 +1,6 @@
 # 独立标注方案与 dse_model 兼容性
 
-检查日期：2026-11-14。本文对应标注工具的本地实现；没有修改 `../dse_model` 的代码、配置或依赖。
+初次检查：2026-11-14；依赖说明更新：2026-11-15。模型已完成独立方案适配，并使用发布到 GitHub 的工具实现；以下区分当前接入状态与初次验证记录。
 
 ## 使用方式
 
@@ -32,11 +32,11 @@
 
 ## dse_model：2026-11-14 已完成独立方案适配
 
-模型项目位置：`/home/punk/yann_repo/paper_code_01/dse_model`。原兼容性检查中的主要缺口已在模型项目实现；完整操作文档见 [新标注方案训练、测试、推理与导出指南](../../dse_model/docs/NEW_ANNOTATION_SCHEME_GUIDE.md)，最新校验见 [模型验证记录](../../dse_model/docs/VALIDATION.md)。本文件开头“没有修改模型”的说明仅描述最初标注工具实现时的检查范围。
+模型项目位置：`/home/punk/yann_repo/paper_code_01/dse_model`。原兼容性检查中的主要缺口已在模型项目实现；完整操作文档见 [新标注方案训练、测试、推理与导出指南](../../dse_model/docs/NEW_ANNOTATION_SCHEME_GUIDE.md)，最新校验见 [模型验证记录](../../dse_model/docs/VALIDATION.md)。模型使用 GitHub main 来源，锁文件固定确切提交，升级操作需在模型自己的环境中执行。
 
 | 环节 | 当前实现 |
 | --- | --- |
-| 依赖 | 模型 pyproject/uv.lock 改为相邻工具 editable 并已同步，使用包含独立方案的本地实现；editable 不冻结源码，正式发布需固定 Git revision 或 wheel |
+| 依赖 | 模型 pyproject 使用 GitHub main，uv.lock 固定具体提交；2026-11-15 已核对安装为 `7e52c0d02a8c24a2099c4f47715c5eeaa042790e`。`uv sync --locked` 复现，`uv sync --upgrade-package dse-annotation-tool` 主动升级；不要求相邻工具源码 |
 | 训练与配置 | 动态 each_arm/global 分类头及稳定 ID 映射；`dse init-scheme` 从导出生成完整实验配置、字段损失权重、schema/head/方案快照和导出模板草稿 |
 | 方案身份 | 默认拒绝混合不同 (project_id,id)，显式合并仍要求 schema/layout 相同且同源标签无冲突；原来源划分键不添加方案 ID |
 | 推理门控 | 按 schema 条件树和依赖顺序处理全部 scope、unknown_id、阈值及逐类别连续确认；仅 dse_v1 使用原始一致性约束 |
@@ -45,7 +45,7 @@
 
 每个新方案仍需明确字段权重、采集组划分、输入证据、校准覆盖、阈值与确认策略、文本业务含义及下游 token 预算。任意新业务矛盾/时序语义不能仅凭字段名自动推断；超出 categorical schema 和声明条件树的任务需专门实现并测试。更换方案需要新实验，不能直接复用旧分类头、续训状态或校准报告。
 
-## 验证
+## 初次验证记录（2026-11-14）
 
 后端全套 78 项测试通过；新增测试覆盖独立 ID、无 phase/global 字段、旧标签与撤销隔离、重启恢复、并发请求、来源复用、导出与 DSEDataset 读取、显式恢复和重复导入。前端构建、中英文检查和改动 Python 文件的 Ruff 检查通过。
 

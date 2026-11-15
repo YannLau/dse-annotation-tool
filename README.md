@@ -70,7 +70,7 @@ Use **New independent annotation scheme** at the top of the page. Name the schem
 
 Dataset import loads sources only by default in the UI; explicitly enable restoration to bring in exported annotations. Each export contains the current scheme and records its identity in the manifest. Back up the entire workspace including schemes/. Switching reloads the page and does not carry unsubmitted drafts into another scheme.
 
-See the [implementation and dse_model compatibility review (Chinese)](docs/INDEPENDENT_SCHEMES_AND_MODEL_COMPATIBILITY.md). No dse_model files were changed. Generic schemas require an updated annotation-tool dependency and explicit loss weights for new fields; custom gated inference and C-text require changes to fixed model-side rules and templates.
+See the [dse_model compatibility guide (Chinese)](docs/INDEPENDENT_SCHEMES_AND_MODEL_COMPATIBILITY.md). dse_model now supports generic fields, scheme identity checks, schema-driven gates and C-text templates; `dse init-scheme` creates configuration drafts. Its tool dependency comes from GitHub main, with an exact commit recorded in the model uv.lock. After publishing tool changes, run `uv sync --upgrade-package dse-annotation-tool` in the model project to upgrade; use `uv sync --locked` elsewhere to reproduce that commit. Each new scheme still needs reviewed loss weights, deployment settings and text semantics.
 
 ### JSON rule import and experiment presets
 

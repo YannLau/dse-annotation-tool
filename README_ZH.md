@@ -71,7 +71,7 @@ uv sync --locked --group dev
 
 数据集导入默认只加载来源；需要恢复导出集原有标注时，显式勾选“同时恢复导出集标注”。导出仅包含当前方案，manifest 记录方案身份。备份时请包含整个工作目录及 `schemes/`。切换页面不会迁移未提交草稿。
 
-详见 [独立方案与 dse_model 兼容性检查](docs/INDEPENDENT_SCHEMES_AND_MODEL_COMPATIBILITY.md)。模型项目未修改：通用规则需要更新标注工具依赖，新增字段需要 loss 权重；自定义门控推理与 C-text 还需要调整模型侧的固定规则和模板。
+详见 [独立方案与 dse_model 兼容性说明](docs/INDEPENDENT_SCHEMES_AND_MODEL_COMPATIBILITY.md)。dse_model 已适配通用字段、方案身份、动态门控与 C-text 模板，可用 `dse init-scheme` 生成配置草稿。模型依赖来自 GitHub main，由模型 uv.lock 固定具体提交；工具发布后，在模型项目执行 `uv sync --upgrade-package dse-annotation-tool` 主动更新，其他机器用 `uv sync --locked` 复现。新方案仍需审核损失权重、门控策略和文本语义。
 
 ### JSON 规则导入与实验预设
 
