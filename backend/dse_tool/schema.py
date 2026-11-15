@@ -124,6 +124,52 @@ def default_schema():
     return {"version": 1, "fields": fields}
 
 
+def import_schema(candidate, previous):
+    """Validate an external schema as a draft against the project's live identities."""
+    result = copy.deepcopy(candidate)
+    try:
+        if not isinstance(result, dict) or not isinstance(result.get("fields"), list):
+            raise ValueError("schema.json 需要包含 fields 数组")
+        if previous is None:
+            result.setdefault("semantic_profile", "generic")
+            result.pop("retired_fields", None)
+            result.pop("retired_classes", None)
+        elif "semantic_profile" in previous:
+            result.setdefault("semantic_profile", previous["semantic_profile"])
+        for field in result["fields"]:
+            if field.get("type") != "categorical":
+                raise ValueError("仅支持 categorical 字段")
+            key = field["field_id"]
+            field.setdefault("label", key)
+            field.setdefault("description", "")
+            field.setdefault(
+                "evidence", "behavior" if key.startswith("adviser.") else "state"
+            )
+            if field["evidence"] not in ["state", "behavior"]:
+                raise ValueError("无效的 evidence")
+            for prop in ["label", "description", "label_en", "description_en"]:
+                if prop in field and not isinstance(field[prop], str):
+                    raise ValueError("字段显示文本必须是字符串")
+            for category in field["classes"]:
+                if not isinstance(category["key"], str) or not category["key"].strip():
+                    raise ValueError("类别 key 必须是非空字符串")
+                category.setdefault("label_zh", category["key"])
+                category.setdefault("color", "#718096")
+                category.setdefault("shortcut", "")
+                for prop in ["label_zh", "label_en", "color", "shortcut"]:
+                    if prop in category and not isinstance(category[prop], str):
+                        raise ValueError("类别显示文本必须是字符串")
+        validate_schema(result)
+        if previous is not None:
+            result = prepare_schema(result, previous)
+            validate_schema(result, previous)
+    except (KeyError, TypeError, AttributeError, RecursionError) as exc:
+        raise ValueError("schema.json 结构无效，请检查字段、类别和条件树") from exc
+    # Versions are allocated by the receiving project at publication time.
+    result["version"] = previous["version"] if previous is not None else 1
+    return result
+
+
 def field_map(schema):
     return {f["field_id"]: f for f in schema["fields"]}
 
@@ -150,9 +196,18 @@ def references(rule):
 
 
 def validate_schema(schema, previous=None):
+    profile = schema.get("semantic_profile", "dse_v1")
+    if profile not in ["dse_v1", "generic"]:
+        raise ValueError("未知语义配置 semantic_profile")
+    if previous and profile != previous.get("semantic_profile", "dse_v1"):
+        raise ValueError("更换语义配置需要新建独立标注方案")
     fields = schema.get("fields", [])
     ids = [f["field_id"] for f in fields]
-    if not fields or len(set(ids)) != len(ids) or "phase" not in ids:
+    if (
+        not fields
+        or len(set(ids)) != len(ids)
+        or (profile == "dse_v1" and "phase" not in ids)
+    ):
         raise ValueError("字段 key 重复或缺少 phase")
     fm = field_map(schema)
     graph = {}
@@ -164,11 +219,19 @@ def validate_schema(schema, previous=None):
             or any(c in key for c in [" ", ":", "/"])
         ):
             raise ValueError("字段 key 包含无效字符")
-        if key in STATE_FIELDS and f.get("evidence", "state") != "state":
+        if (
+            profile == "dse_v1"
+            and key in STATE_FIELDS
+            and f.get("evidence", "state") != "state"
+        ):
             raise ValueError("固定状态字段必须使用状态证据")
-        if key.startswith("adviser.") and f.get("evidence") != "behavior":
+        if (
+            profile == "dse_v1"
+            and key.startswith("adviser.")
+            and f.get("evidence") != "behavior"
+        ):
             raise ValueError("adviser 必须使用行为证据")
-        if key in STATE_FIELDS and f.get("scope") != "each_arm":
+        if profile == "dse_v1" and key in STATE_FIELDS and f.get("scope") != "each_arm":
             raise ValueError("固定状态字段必须按臂独立")
         if f.get("scope") not in ["each_arm", "global"]:
             raise ValueError("无效作用域")
@@ -190,7 +253,7 @@ def validate_schema(schema, previous=None):
             def check(node):
                 if isinstance(node, bool):
                     return
-                refs = references(node)
+                references(node)
                 if "field" in node:
                     prefix, target = node["field"].split(".", 1)
                     if (
@@ -381,21 +444,26 @@ def resolve(schema, raw, center=True):
     return out
 
 
-def semantic_errors(labels):
+def semantic_errors(labels, schema=None):
     errors = []
-    for arm in ["left", "right"]:
+    legacy = (schema or {}).get("semantic_profile", "dse_v1") == "dse_v1"
+    for arm in ["left", "right", "global"]:
         rs = labels[arm]
-        val = lambda k: rs.get(k, {}).get("value_id")
+
+        def val(k):
+            return rs.get(k, {}).get("value_id")
+
         phase, holding, release = val("phase"), val("holding"), val("release_readiness")
         if (
-            rs.get("release_readiness", {}).get("applicability") == "applicable"
+            legacy
+            and rs.get("release_readiness", {}).get("applicability") == "applicable"
             and release == 1
             and (phase != 5 or holding != 1)
         ):
             errors.append(arm + ": release ready 需要 place_align 且 holding")
-        if phase in [4, 5] and holding == 0:
+        if legacy and phase in [4, 5] and holding == 0:
             errors.append(arm + ": 搬运/放置阶段配 empty 需要复核")
-        if phase == 2 and holding == 1:
+        if legacy and phase == 2 and holding == 1:
             errors.append(arm + ": grasp_align 配 holding 需要复核")
         for key, r in rs.items():
             if r["required"] is True and r["annotation_status"] == "missing":
@@ -440,7 +508,11 @@ def deletion_blockers(schema, field_id, class_id=None):
     """References are checked against the proposed live schema, not historical versions."""
     blockers = []
     fields = field_map(schema)
-    if class_id is None and field_id == "phase":
+    if (
+        class_id is None
+        and field_id == "phase"
+        and schema.get("semantic_profile", "dse_v1") == "dse_v1"
+    ):
         blockers.append("phase 是帧游标、双臂阶段与导出的基础字段，不能删除")
     for field in schema["fields"]:
         if class_id is None and field["field_id"] == field_id:
@@ -470,7 +542,7 @@ def deletion_blockers(schema, field_id, class_id=None):
         blockers.append(
             f"{field_id}.unknown_id 仍引用类别 {class_id}；请先选择其他 unknown 类别"
         )
-    release_ready = any(
+    release_ready = schema.get("semantic_profile", "dse_v1") == "dse_v1" and any(
         c["id"] == 1 for c in fields.get("release_readiness", {}).get("classes", [])
     )
     if field_id == "holding" and release_ready and class_id in [None, 1]:

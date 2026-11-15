@@ -106,6 +106,7 @@ class Exporter:
             "destination": str(target),
             "started": time.time(),
             "error": None,
+            "annotation_scheme": self.store.get("scheme_info"),
         }
         cancel = threading.Event()
         self.cancels[job["id"]] = cancel
@@ -283,7 +284,10 @@ class Exporter:
                     center = start <= low + j < end
                     effective = frozen_store.labels(source, source_frame, center)
                     phase_values = [
-                        effective[a]["phase"]["value_id"] for a in ["left", "right"]
+                        effective[a].get("phase", {}).get("value_id")
+                        if schema.get("semantic_profile", "dse_v1") == "dse_v1"
+                        else None
+                        for a in ["left", "right"]
                     ]
                     event_rows = frozen_store.db.execute(
                         "SELECT frame FROM events WHERE source=? AND status='confirmed'",
@@ -739,6 +743,7 @@ class Exporter:
                     "format": "LeRobot-v2.1+DSE-1",
                     "schema_version": schema["version"],
                     "schema_hash": digest(schema),
+                    "annotation_scheme": job.get("annotation_scheme"),
                     "source_fingerprint": fingerprint,
                     "source_episode_uuids": sorted(carried_sources),
                     "source_dataset_fingerprints": sorted(

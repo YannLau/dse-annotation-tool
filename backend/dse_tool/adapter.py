@@ -15,6 +15,7 @@ class DSEDataset:
         self.root = Path(root)
         verify_manifest(self.root, annotations_only=True)
         manifest = json.loads((self.root / "annotations/manifest.json").read_text())
+        self.annotation_scheme = manifest.get("annotation_scheme")
         self.history_config = HistoryConfig.from_dict(
             history_config
             if history_config is not None

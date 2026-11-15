@@ -25,10 +25,19 @@ type FrameSnapshot = {
   view: Obj;
   images: Record<string, string>;
 };
+const annotationScheme =
+  sessionStorage.getItem("dse-annotation-scheme") || "default";
+function switchScheme(id: string) {
+  sessionStorage.setItem("dse-annotation-scheme", id);
+  window.location.reload();
+}
 async function api(path: string, body?: any, signal?: AbortSignal) {
   const response = await fetch("/api" + path, {
     method: body === undefined ? "GET" : "POST",
-    headers: body === undefined ? {} : { "Content-Type": "application/json" },
+    headers: {
+      "X-Annotation-Scheme": annotationScheme,
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal,
   });
@@ -226,6 +235,343 @@ function RuleEditor({
     </div>
   );
 }
+function SchemeManager({
+  project,
+  notify,
+  disabled,
+}: {
+  project: Obj;
+  notify: (s: string) => void;
+  disabled: boolean;
+}) {
+  const { language } = useI18n();
+  const [catalog, setCatalog] = useState<Obj>({ schemes: [], trash: [] });
+  const [showTrash, setShowTrash] = useState(false);
+  const [confirmation, setConfirmation] = useState<Obj | null>(null);
+  const [confirmationName, setConfirmationName] = useState("");
+  const refreshCatalog = () =>
+    api("/schemes")
+      .then(setCatalog)
+      .catch((e) => notify(e.message));
+  useEffect(() => {
+    refreshCatalog();
+  }, []);
+  async function changeScheme(entry: Obj, action: string) {
+    setPending(true);
+    try {
+      const result = await api(`/schemes/${entry.id}/${action}`, {
+        confirmation: confirmationName,
+      });
+      setCatalog(result);
+      setConfirmation(null);
+      setConfirmationName("");
+      if (action === "trash" && entry.id === annotationScheme)
+        switchScheme(result.schemes[0]?.id || "");
+      if (action === "restore" && !project.scheme) switchScheme(entry.id);
+    } catch (e: any) {
+      notify(e.message);
+    } finally {
+      setPending(false);
+    }
+  }
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [candidate, setCandidate] = useState<Obj | null>(null);
+  const [preview, setPreview] = useState<Obj | null>(null);
+  const [presets, setPresets] = useState<Obj[]>([]);
+  const [pending, setPending] = useState(false);
+  const fileVersion = useRef(0);
+  useEffect(() => {
+    api("/schema/presets")
+      .then(setPresets)
+      .catch((e) => notify(e.message));
+  }, []);
+  function selectRules(value: Obj | null) {
+    fileVersion.current++;
+    setCandidate(value);
+    setPreview(null);
+  }
+  return (
+    <section className="scheme-manager">
+      <div className="toolbar">
+        <label>
+          {tr("标注方案")}
+          <select
+            aria-label={tr("标注方案")}
+            value={project.scheme?.id || ""}
+            disabled={disabled || pending}
+            onChange={(e) => switchScheme(e.target.value)}
+          >
+            {!project.scheme && (
+              <option value="">{tr("请选择或新建标注方案")}</option>
+            )}
+            {catalog.schemes.map((s: Obj) => (
+              <option key={s.id} value={s.id}>
+                {s.id === "default" ? tr(s.name) : s.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button disabled={disabled || pending} onClick={() => setOpen(!open)}>
+          {tr("新建独立标注方案")}
+        </button>
+        <button
+          disabled={!project.scheme || disabled || pending}
+          onClick={() =>
+            setConfirmation({ ...project.scheme, action: "trash" })
+          }
+        >
+          {tr("移入回收站")}
+        </button>
+        <button
+          disabled={pending}
+          onClick={() => {
+            setShowTrash(!showTrash);
+            refreshCatalog();
+          }}
+        >
+          {tr("回收站")}
+        </button>
+      </div>
+      {showTrash && (
+        <div className="scheme-create">
+          {catalog.trash.length === 0 && <p>{tr("回收站为空")}</p>}
+          {catalog.trash.map((entry: Obj) => (
+            <div key={entry.id} className="toolbar">
+              <span>
+                {entry.name} · {tr("标注记录数")} {entry.annotation_count}
+              </span>
+              <button
+                disabled={pending || entry.status === "deleting"}
+                onClick={() => changeScheme(entry, "restore")}
+              >
+                {tr("恢复方案")}
+              </button>
+              <button
+                disabled={pending}
+                onClick={() => {
+                  setConfirmation({ ...entry, action: "purge" });
+                  setConfirmationName("");
+                }}
+              >
+                {tr("永久删除")}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {confirmation && (
+        <div
+          className="scheme-create"
+          role="dialog"
+          aria-label={tr("确认删除方案")}
+        >
+          <p>{confirmation.name}</p>
+          {confirmation.action === "purge" ? (
+            <>
+              <p>
+                {tr("标注记录数")} {confirmation.annotation_count}
+              </p>
+              <p>
+                {tr(
+                  "永久删除将清除该方案的规则、标注、审核、选区和撤销历史，无法恢复。原始数据、其他方案和已导出的数据集会保留。",
+                )}
+              </p>
+              <label>
+                {tr("输入完整方案名称确认")}{" "}
+                <input
+                  value={confirmationName}
+                  onChange={(e) => setConfirmationName(e.target.value)}
+                />
+              </label>
+            </>
+          ) : (
+            <p>
+              {tr("移入回收站后可恢复。当前方案会切换，未提交的草稿会丢失。")}
+            </p>
+          )}
+          <button
+            disabled={
+              pending ||
+              (confirmation.action === "purge" &&
+                confirmationName !== confirmation.name)
+            }
+            onClick={() => changeScheme(confirmation, confirmation.action)}
+          >
+            {tr("确认")}
+          </button>
+          <button disabled={pending} onClick={() => setConfirmation(null)}>
+            {tr("取消")}
+          </button>
+        </div>
+      )}
+      {open && (
+        <div className="scheme-create">
+          <p>
+            {tr(
+              "复用已登记数据源；新方案从空标注开始，规则、审核、选区和撤销历史独立保存。切换方案会重新加载页面，未提交的标注草稿不会带入新方案。",
+            )}
+          </p>
+          <label>
+            {tr("方案名称")}{" "}
+            <input
+              aria-label={tr("方案名称")}
+              maxLength={100}
+              value={name}
+              disabled={pending}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </label>
+          <div className="toolbar">
+            <button
+              disabled={pending || !project.schema}
+              onClick={() =>
+                selectRules({
+                  ...structuredClone(project.schema),
+                  semantic_profile:
+                    project.schema?.semantic_profile || "dse_v1",
+                })
+              }
+            >
+              {tr("使用当前规则")}
+            </button>
+            <select
+              aria-label={tr("新方案预设")}
+              defaultValue=""
+              disabled={pending}
+              onChange={(e) => {
+                const p = presets.find((p) => p.preset.id === e.target.value);
+                if (p)
+                  selectRules({
+                    ...structuredClone(p),
+                    semantic_profile: "dse_v1",
+                  });
+              }}
+            >
+              <option value="">{tr("选择规则预设")}</option>
+              {presets.map((p) => (
+                <option key={p.preset.id} value={p.preset.id}>
+                  {language === "en" ? p.preset.name_en : p.preset.name}
+                </option>
+              ))}
+            </select>
+            <label>
+              {tr("导入独立 schema.json")}
+              <input
+                aria-label={tr("导入独立 schema.json")}
+                type="file"
+                accept=".json,application/json"
+                disabled={pending}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (!file) return;
+                  const version = ++fileVersion.current;
+                  setCandidate(null);
+                  setPreview(null);
+                  setPending(true);
+                  try {
+                    const parsed = JSON.parse(
+                      (await file.text()).replace(/^\uFEFF/, ""),
+                    );
+                    if (version === fileVersion.current) {
+                      if (!parsed || !Array.isArray(parsed.fields))
+                        throw Error(tr("schema.json 需要包含 fields 数组"));
+                      selectRules({
+                        ...parsed,
+                        semantic_profile: parsed.semantic_profile || "generic",
+                      });
+                    }
+                  } catch (e: any) {
+                    notify(e.message);
+                  } finally {
+                    setPending(false);
+                  }
+                }}
+              />
+            </label>
+          </div>
+          {candidate && (
+            <>
+              <label>
+                {tr("语义检查")}
+                <select
+                  aria-label={tr("语义检查")}
+                  disabled={pending}
+                  value={candidate.semantic_profile}
+                  onChange={(e) =>
+                    selectRules({
+                      ...candidate,
+                      semantic_profile: e.target.value,
+                    })
+                  }
+                >
+                  <option value="generic">
+                    {tr("通用规则：不要求 phase，不附加固定阶段判断")}
+                  </option>
+                  <option value="dse_v1">
+                    {tr("原始 DSE：保留阶段与持物语义检查")}
+                  </option>
+                </select>
+              </label>
+              <p>
+                {tr("待创建字段：")}
+                {candidate.fields
+                  .map((f: Obj) => f?.field_id || "?")
+                  .join(", ")}
+              </p>
+              <button
+                disabled={pending}
+                onClick={async () => {
+                  setPending(true);
+                  try {
+                    setPreview(
+                      (await api("/schemes/preview", { schema: candidate }))
+                        .schema,
+                    );
+                  } catch (e: any) {
+                    notify(e.message);
+                  } finally {
+                    setPending(false);
+                  }
+                }}
+              >
+                {tr("校验独立规则")}
+              </button>
+            </>
+          )}
+          {preview && (
+            <p>
+              {tr(
+                "规则校验通过。创建后旧方案及其标注保持原样，新方案需要重新标注。",
+              )}
+            </p>
+          )}
+          <button
+            className="primary"
+            disabled={pending || disabled || !preview || !name.trim()}
+            onClick={async () => {
+              setPending(true);
+              try {
+                const created = await api("/schemes", {
+                  name,
+                  schema: preview,
+                });
+                switchScheme(created.id);
+              } catch (e: any) {
+                notify(e.message);
+                setPending(false);
+              }
+            }}
+          >
+            {tr("创建并切换")}
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function SchemaEditor({
   schema,
   onPublish,
@@ -237,7 +583,7 @@ function SchemaEditor({
   notify: (s: string) => void;
   workspace: string;
 }) {
-  useI18n();
+  const { language } = useI18n();
   const [draft, setDraft] = useState<Obj>(structuredClone(schema)),
     [index, setIndex] = useState(0),
     [preview, setPreview] = useState<Obj | null>(null),
@@ -245,7 +591,59 @@ function SchemaEditor({
     [lp, setLp] = useState(2),
     [rp, setRp] = useState(4),
     [deletion, setDeletion] = useState<Obj | null>(null),
-    [deletionHistory, setDeletionHistory] = useState<Obj[]>([]);
+    [deletionHistory, setDeletionHistory] = useState<Obj[]>([]),
+    [importing, setImporting] = useState(false),
+    [presets, setPresets] = useState<Obj[]>([]),
+    [presetId, setPresetId] = useState("default");
+  const importInput = useRef<HTMLInputElement>(null);
+  const currentDraft = useRef(draft);
+  currentDraft.current = draft;
+  useEffect(() => {
+    api("/schema/presets")
+      .then(setPresets)
+      .catch((e) => notify(e.message));
+  }, []);
+  const selectedPreset = presets.find((p) => p.preset.id === presetId);
+  async function loadRules(candidate: unknown, original: Obj) {
+    const result = await api("/schema/import", { schema: candidate });
+    if (currentDraft.current !== original)
+      throw Error("草稿已变化，请重新导入");
+    setDraft(result.schema);
+    setIndex(0);
+    setPreview(null);
+    setDeletion(null);
+    setDeletionHistory([]);
+    setNewKey("");
+    notify("规则已加载到草稿，请校验并发布");
+  }
+  async function loadPreset() {
+    if (!selectedPreset) return;
+    setImporting(true);
+    try {
+      await loadRules(selectedPreset, currentDraft.current);
+    } catch (e: any) {
+      notify(e.message);
+    } finally {
+      setImporting(false);
+    }
+  }
+  async function importFile(file: File) {
+    const original = currentDraft.current;
+    setImporting(true);
+    try {
+      let candidate: unknown;
+      try {
+        candidate = JSON.parse((await file.text()).replace(/^\uFEFF/, ""));
+      } catch {
+        throw Error("文件不是有效的 JSON");
+      }
+      await loadRules(candidate, original);
+    } catch (e: any) {
+      notify(e.message);
+    } finally {
+      setImporting(false);
+    }
+  }
   useEffect(() => {
     const key = "dse-schema-draft:" + workspace + ":" + schema.version;
     const saved = localStorage.getItem(key);
@@ -374,6 +772,50 @@ function SchemaEditor({
     <section className="schema-layout">
       <aside>
         <h2>{tr("字段与规则")}</h2>
+        <label>
+          {tr("规则预设")}
+          <select
+            value={presetId}
+            onChange={(e) => setPresetId(e.target.value)}
+          >
+            {presets.map((p) => (
+              <option key={p.preset.id} value={p.preset.id}>
+                {language === "en" ? p.preset.name_en : p.preset.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {selectedPreset && (
+          <p>
+            <small>
+              {language === "en"
+                ? selectedPreset.preset.description_en
+                : selectedPreset.preset.description}
+            </small>
+          </p>
+        )}
+        <button disabled={importing || !selectedPreset} onClick={loadPreset}>
+          {tr("加载预设到草稿")}
+        </button>
+        <input
+          ref={importInput}
+          type="file"
+          accept=".json,application/json"
+          hidden
+          aria-label={tr("导入 schema.json")}
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            e.target.value = "";
+            if (file) void importFile(file);
+          }}
+        />
+        <button
+          disabled={importing}
+          onClick={() => importInput.current?.click()}
+        >
+          {tr(importing ? "正在校验规则…" : "导入 schema.json")}
+        </button>
+        <small>{tr("导入将替换当前草稿；校验并发布后生效。")}</small>
         {draft.fields.map((f: Obj, i: number) => (
           <button
             className={i === index ? "active" : ""}
@@ -653,7 +1095,7 @@ function SchemaEditor({
           <button onClick={check}>{tr("校验与迁移预览")}</button>
           <button
             className="primary"
-            disabled={!preview}
+            disabled={!preview || importing}
             onClick={async () => {
               try {
                 await api("/schema", draft);
@@ -775,6 +1217,7 @@ function App() {
     [path, setPath] = useState(
       "/home/punk/yann_repo/paper_code_01/tron2_dataset/lerobot_v2.1_examples",
     ),
+    [restoreAnnotations, setRestoreAnnotations] = useState(false),
     [search, setSearch] = useState(""),
     [range, setRange] = useState<[number, number]>([0, 1]),
     [interval, setBatchInterval] = useState(false),
@@ -1223,7 +1666,7 @@ function App() {
               v.cameras.map(async (_: string, c: number) => {
                 nextImages[`${h.imageKey}:${c}`] =
                   await imageCache.current.load(
-                    `/api/frame/${datasetKey}/${episode}/${c}/${h.frame}`,
+                    `/api/frame/${datasetKey}/${episode}/${c}/${h.frame}?scheme=${encodeURIComponent(annotationScheme)}`,
                     controller.signal,
                   );
               }),
@@ -1524,7 +1967,10 @@ function App() {
     setMessage("校验内容指纹、数据与媒体 PTS…");
     setError("");
     try {
-      const r = await api("/import", { path });
+      const r = await api("/import", {
+        path,
+        restore_annotations: restoreAnnotations,
+      });
       await loadProject();
       await choose(r.fingerprint);
       notify(
@@ -1730,6 +2176,13 @@ function App() {
             <small>{tr("双臂观测 · 本地工作台")}</small>
           </div>
         </div>
+        {
+          <SchemeManager
+            project={project || { scheme: null, schema: null }}
+            notify={notify}
+            disabled={busy || choosing || previewLoading || reviewLoading}
+          />
+        }
         <nav>
           {[
             ["work", tr("标注工作台")],
@@ -1776,6 +2229,14 @@ function App() {
           <button className="primary" disabled={busy} onClick={importSource}>
             {tr("导入 / 重新绑定")}
           </button>
+          <label>
+            <input
+              type="checkbox"
+              checked={restoreAnnotations}
+              onChange={(e) => setRestoreAnnotations(e.target.checked)}
+            />
+            {tr("同时恢复导出集标注（需规则兼容）")}
+          </label>
           {project?.datasets.length > 0 && (
             <select
               aria-label={tr("已登记数据集")}
@@ -1795,6 +2256,7 @@ function App() {
       {error ? (
         <div role="alert" className="notice error">
           {tr(error)}
+
           <button onClick={() => setError("")}>{tr("关闭")}</button>
         </div>
       ) : (
@@ -2253,6 +2715,7 @@ function App() {
                 </div>
               </div>
               {mode === "behavior" &&
+                schema?.fields.some((f: Obj) => f.field_id === "phase") &&
                 ["left", "right"].map((arm) => (
                   <div className="track" key={arm}>
                     <span>
@@ -2274,7 +2737,7 @@ function App() {
                           const offset = view.source_key.frame - view.frame;
                           const c = schema?.fields
                             .find((f: Obj) => f.field_id === "phase")
-                            .classes.find((c: Obj) => c.id === r.value);
+                            ?.classes.find((c: Obj) => c.id === r.value);
                           return (
                             <button
                               key={r.id}

@@ -1,4 +1,5 @@
 import argparse
+import anyio
 import json
 import threading
 import logging
@@ -15,8 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from . import __version__
 from .dataset import Dataset, content_fingerprint, verify_manifest
-from .exporter import Exporter
-from .store import Store
+from .schemes import Schemes
 from .schema import (
     resolve,
     head_spec,
@@ -24,6 +24,8 @@ from .schema import (
     validate_schema,
     deletion_plan,
     prepare_schema,
+    import_schema,
+    default_schema,
 )
 from .assist import event_candidates, adviser_candidate
 from .history import HistoryConfig
@@ -43,6 +45,7 @@ class HistorySettings(BaseModel):
 
 class ImportRequest(BaseModel):
     path: str
+    restore_annotations: bool | None = None
 
 
 class DirectoryPickerRequest(BaseModel):
@@ -126,7 +129,9 @@ class ReviewRequest(BaseModel):
 
 def create_app(work_root):
     app = FastAPI(title="DSE Annotation Tool", version=__version__)
-    store = Store(work_root)
+    schemes = Schemes(work_root)
+    store = schemes.store
+    registry = schemes.base
     log_dir = store.root / "logs"
     log_dir.mkdir(exist_ok=True)
     logger = logging.getLogger("dse." + str(store.root))
@@ -137,13 +142,16 @@ def create_app(work_root):
         )
         handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
         logger.addHandler(handler)
-    exporter = Exporter(store)
+    exporter = schemes.exporter
     datasets = {}
     inspectors = {}
     media_lock = threading.RLock()
-    app.state.store = store
-    app.state.exporter = exporter
+    app.state.store = registry
+    app.state.exporter = schemes.instances["default"][1]
+    app.state.schemes = schemes
     app.state.datasets = datasets
+
+    scheme_requests = threading.Lock()
 
     @app.middleware("http")
     async def origin_guard(request, call_next):
@@ -163,7 +171,30 @@ def create_app(work_root):
             ]
         ):
             return JSONResponse({"detail": "只接受本机应用来源"}, status_code=403)
-        return await call_next(request)
+        # Keep lifecycle changes ordered after in-flight scheme requests.
+        await anyio.to_thread.run_sync(scheme_requests.acquire)
+        try:
+            management = (
+                request.url.path == "/api/schemes"
+                or request.url.path.startswith("/api/schemes/")
+                or request.url.path == "/api/schema/presets"
+            )
+            if management or not request.url.path.startswith("/api/"):
+                return await call_next(request)
+            try:
+                scoped = schemes.get(
+                    request.headers.get("X-Annotation-Scheme")
+                    or request.query_params.get("scheme", "default")
+                )
+            except ValueError as exc:
+                return JSONResponse({"detail": str(exc)}, status_code=400)
+            token = schemes.context.set(scoped)
+            try:
+                return await call_next(request)
+            finally:
+                schemes.context.reset(token)
+        finally:
+            scheme_requests.release()
 
     @app.exception_handler(ValueError)
     async def validation_error(request, exc):
@@ -191,14 +222,14 @@ def create_app(work_root):
 
     def get_dataset(key):
         if key not in datasets:
-            row = store.db.execute(
+            row = registry.db.execute(
                 "SELECT * FROM datasets WHERE fingerprint=?", (key,)
             ).fetchone()
             if not row:
                 raise ValueError("未登记的数据集")
             datasets[key] = Dataset(row["root"], store.root / "cache" / "indices" / key)
         ds = datasets[key]
-        row = store.db.execute(
+        row = registry.db.execute(
             "SELECT signatures FROM datasets WHERE fingerprint=?", (key,)
         ).fetchone()
         if not row:
@@ -340,7 +371,8 @@ def create_app(work_root):
         if not 0 <= camera < len(reader.dataset.cameras):
             raise ValueError("未知相机")
         cache = store.root / "cache" / "jpeg"
-        cache.mkdir(exist_ok=True)
+        # Inspector handles can be reused while this scheme's cache is absent.
+        cache.mkdir(parents=True, exist_ok=True)
         filename = cache / f"inspect-{handle}-{episode}-{camera}-{frame}.jpg"
         with media_lock:
             if not filename.exists():
@@ -365,6 +397,8 @@ def create_app(work_root):
     def project():
         return {
             "work_root": str(store.root),
+            "scheme": store.get("scheme_info"),
+            "schemes": schemes.list(),
             "schema": store.schema(),
             "datasets": [
                 {
@@ -372,7 +406,7 @@ def create_app(work_root):
                     "root": r["root"],
                     "report": json.loads(r["report"]),
                 }
-                for r in store.db.execute("SELECT * FROM datasets")
+                for r in registry.db.execute("SELECT * FROM datasets")
             ],
             "preferences": store.get("preferences", {}),
             "jobs": [
@@ -380,6 +414,30 @@ def create_app(work_root):
             ],
             "revision": store.get("revision", 0),
         }
+
+    @app.get("/api/schemes")
+    def list_schemes():
+        return schemes.catalog()
+
+    @app.post("/api/schemes/{key}/trash")
+    def trash_scheme(key: str):
+        return schemes.lifecycle(key, "trash")
+
+    @app.post("/api/schemes/{key}/restore")
+    def restore_scheme(key: str):
+        return schemes.lifecycle(key, "restore")
+
+    @app.post("/api/schemes/{key}/purge")
+    def purge_scheme(key: str, body: dict):
+        return schemes.lifecycle(key, "purge", body.get("confirmation"))
+
+    @app.post("/api/schemes")
+    def create_scheme(body: dict):
+        return schemes.create(body.get("name"), body.get("schema"))
+
+    @app.post("/api/schemes/preview")
+    def preview_scheme(body: dict):
+        return {"schema": import_schema(body.get("schema"), None)}
 
     @app.post("/api/import")
     def import_dataset(body: ImportRequest):
@@ -389,7 +447,7 @@ def create_app(work_root):
         fingerprint, signatures = content_fingerprint(root)
         verify_manifest(root)
         ds = Dataset(root, store.root / "cache" / "indices" / fingerprint)
-        existing = store.db.execute(
+        existing = registry.db.execute(
             "SELECT * FROM datasets WHERE fingerprint=?", (fingerprint,)
         ).fetchone()
         report = (
@@ -398,20 +456,28 @@ def create_app(work_root):
         logger.info(
             "Import %s fingerprint=%s episodes=%s", root, fingerprint, len(ds.episodes)
         )
-        with store.lock, store.db:
-            store.db.execute(
-                "INSERT OR REPLACE INTO datasets VALUES(?,?,?,?,?)",
-                (
-                    fingerprint,
-                    str(root),
-                    json.dumps(ds.info),
-                    json.dumps(report),
-                    json.dumps(signatures),
-                ),
-            )
-            if (root / "annotations/schema.json").exists() and not existing:
+        restore = body.restore_annotations
+        if restore is None:
+            restore = store.get("scheme_info")["id"] == "default" and not existing
+        with registry.lock, store.lock, store.db:
+            restored = store.get("restored_annotation_sources", [])
+            if (
+                (root / "annotations/schema.json").exists()
+                and restore
+                and fingerprint not in restored
+            ):
                 schema = json.loads((root / "annotations/schema.json").read_text())
                 validate_schema(schema)
+                has_state = any(
+                    store.db.execute("SELECT 1 FROM " + table + " LIMIT 1").fetchone()
+                    for table in ["annotations", "selections", "reviews", "events"]
+                )
+                if has_state and schema != store.schema():
+                    raise ValueError(
+                        "导出集规则与当前方案不一致，请新建独立标注方案后恢复"
+                    )
+                if not has_state:
+                    store.db.execute("DELETE FROM schemas")
                 current = store.db.execute(
                     "SELECT hash FROM schemas WHERE version=?", (schema["version"],)
                 ).fetchone()
@@ -507,8 +573,20 @@ def create_app(work_root):
                             "INSERT INTO selections(dataset,episode,start,end) VALUES(?,?,?,?)",
                             (fingerprint, e, a, b),
                         )
+                store.set("restored_annotation_sources", [*restored, fingerprint])
             store.history_barrier()
             store.db.commit()
+            registry.db.execute(
+                "INSERT OR REPLACE INTO datasets VALUES(?,?,?,?,?)",
+                (
+                    fingerprint,
+                    str(root),
+                    json.dumps(ds.info),
+                    json.dumps(report),
+                    json.dumps(signatures),
+                ),
+            )
+            registry.db.commit()
         datasets[fingerprint] = ds
         return {
             "fingerprint": fingerprint,
@@ -529,7 +607,7 @@ def create_app(work_root):
             "history_context_seconds": ds.history_capacity,
             "info": ds.info,
             "report": json.loads(
-                store.db.execute(
+                registry.db.execute(
                     "SELECT report FROM datasets WHERE fingerprint=?", (key,)
                 ).fetchone()[0]
             ),
@@ -641,7 +719,7 @@ def create_app(work_root):
             if mode == "behavior"
             else [],
             "tracks": tracks,
-            "complete_errors": semantic_errors(store.labels(source, sf))
+            "complete_errors": semantic_errors(store.labels(source, sf), store.schema())
             if mode == "behavior"
             else [],
             "task": next(
@@ -660,7 +738,9 @@ def create_app(work_root):
         if camera < 0 or camera >= len(ds.cameras):
             raise ValueError("未知相机")
         cache = store.root / "cache" / "jpeg"
-        cache.mkdir(exist_ok=True)
+        # A shared Dataset may already be loaded by another scheme, so this
+        # scheme's cache parent need not exist yet.
+        cache.mkdir(parents=True, exist_ok=True)
         filename = cache / f"{key}-{episode}-{camera}-{frame}.jpg"
         with media_lock:
             if not filename.exists():
@@ -818,7 +898,7 @@ def create_app(work_root):
         bounds(ds, episode, frame, frame + 1)
         source, sf, _ = ds.source_key(episode, frame, key)
         labels = store.labels(source, sf)
-        errors = semantic_errors(labels)
+        errors = semantic_errors(labels, store.schema())
         for arm, fields in labels.items():
             for key, record in fields.items():
                 if (
@@ -848,6 +928,26 @@ def create_app(work_root):
             store.set("schema_draft", body)
             store.db.commit()
         return {"saved": True}
+
+    @app.get("/api/schema/presets")
+    def schema_presets():
+        baseline = default_schema()
+        baseline["preset"] = {
+            "id": "default",
+            "name": "默认八字段",
+            "name_en": "Default eight fields",
+            "description": "原始八字段及阶段门控，用于基线对照。",
+            "description_en": "Original eight fields and phase gates for baseline comparisons.",
+        }
+        presets = [baseline]
+        for name in ["phase-holding", "state-four", "state-full-holding"]:
+            path = Path(__file__).parent / "presets" / f"{name}.json"
+            presets.append(json.loads(path.read_text(encoding="utf-8")))
+        return presets
+
+    @app.post("/api/schema/import")
+    def schema_import(body: dict):
+        return {"schema": import_schema(body.get("schema"), store.schema())}
 
     @app.post("/api/schema/delete-preview")
     def schema_delete_preview(body: dict):
@@ -969,6 +1069,10 @@ def create_app(work_root):
 
     @app.post("/api/adviser/suggest")
     def suggest_adviser(body: dict):
+        if store.schema().get("semantic_profile", "dse_v1") != "dse_v1":
+            raise ValueError(
+                "通用方案不使用固定阶段的 adviser 建议，请按自定义规则人工标注"
+            )
         ds = get_dataset(body["dataset"])
         rows = ds.rows(body["episode"])
         source, sf, _ = ds.source_key(body["episode"], body["frame"], body["dataset"])
@@ -1003,7 +1107,7 @@ def create_app(work_root):
     def export(body: ExportRequest):
         ds = get_dataset(body.dataset)
         target = Path(body.destination).expanduser().resolve()
-        for r in store.db.execute("SELECT root FROM datasets"):
+        for r in registry.db.execute("SELECT root FROM datasets"):
             root = Path(r[0]).resolve()
             if (
                 target == root

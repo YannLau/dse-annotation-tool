@@ -93,7 +93,9 @@ def review_labels(
                     )
             labels = resolve(schema, prospective)
             conflicts = [
-                error for error in semantic_errors(labels) if "缺少必填" not in error
+                error
+                for error in semantic_errors(labels, schema)
+                if "缺少必填" not in error
             ]
             segment_reviewable = segment_changed = False
             for arm, f in fields:

@@ -1351,3 +1351,49 @@ nav button {
   margin-top: 8px;
   font-weight: 600;
 }
+
+.scheme-manager {
+  display: contents;
+}
+.scheme-manager > .toolbar {
+  align-items: flex-end;
+  gap: 12px;
+  max-width: 100%;
+}
+.scheme-manager > .toolbar > label {
+  margin: 0;
+  min-width: 0;
+}
+.scheme-manager > .toolbar > label > select {
+  width: 180px;
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+.scheme-manager > .toolbar > button {
+  white-space: nowrap;
+}
+.scheme-manager > .toolbar > label > select,
+.scheme-manager > .toolbar > button {
+  height: 36px;
+  font-size: inherit;
+}
+.scheme-create {
+  padding: 12px;
+  max-width: 1000px;
+}
+.scheme-manager > .scheme-create {
+  order: 1;
+  flex: 0 0 100%;
+  min-width: 0;
+  max-width: none;
+  border-top: 1px solid #253042;
+}
+.scheme-create label {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  margin: 8px;
+}
+.scheme-create p {
+  line-height: 1.6;
+}

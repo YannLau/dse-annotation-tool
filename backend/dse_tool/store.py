@@ -27,6 +27,7 @@ class Store:
         self.root.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
         self._local = threading.local()
+        self._connections = []
         self.db = sqlite3.connect(
             self.root / "project.sqlite3", check_same_thread=False
         )
@@ -81,11 +82,18 @@ class Store:
             )
             connection.row_factory = sqlite3.Row
             self._local.connection = connection
+            self._connections.append(connection)
         return self._local.connection
 
     @db.setter
     def db(self, connection):
         self._local.connection = connection
+        self._connections.append(connection)
+
+    def close(self):
+        for connection in self._connections:
+            connection.close()
+        self._connections.clear()
 
     def backup(self):
         target = self.root / "backups"
@@ -446,7 +454,7 @@ class Store:
                 for frame in eligible:
                     errors = [
                         e
-                        for e in semantic_errors(self.labels(source, frame))
+                        for e in semantic_errors(self.labels(source, frame), schema)
                         if "缺少必填" not in e and e.startswith(arm + ":")
                     ]
                     if errors:
@@ -510,7 +518,7 @@ class Store:
                             errors = [
                                 e
                                 for e in semantic_errors(
-                                    self.labels(change["source"], frame)
+                                    self.labels(change["source"], frame), schema
                                 )
                                 if "缺少必填" not in e
                                 and e.startswith(change["arm"] + ":")

@@ -64,6 +64,29 @@ The playback and range-control panel floats near the bottom of the window. Drag 
 
 During frame changes, the previous complete image group remains visible. The new current/history/future images, labels, and telemetry replace it together after every new image has decoded; cameras are no longer covered by a loading overlay. Image captions always identify the displayed frames, and label editing waits until the requested frame is ready. Images use stable URLs and a bounded decoded-image cache; labels are fetched every time. Dataset, episode, evidence-mode, and reference-window changes isolate previous images. Returning to state mode also immediately closes enlarged future images. See [Smooth Frame Switching](docs/SMOOTH_FRAME_SWITCHING_2026-11-01_EN.md).
 
+### Independent annotation schemes
+
+Use **New independent annotation scheme** at the top of the page. Name the scheme, choose current rules, a preset or an independent schema.json, validate, then create and switch. Sources are shared without copying videos; schemas, labels, reviews, events, training selections, preferences and undo history are isolated. Generic rules need not contain phase. Existing Fields & rules publication still upgrades only the current scheme.
+
+Dataset import loads sources only by default in the UI; explicitly enable restoration to bring in exported annotations. Each export contains the current scheme and records its identity in the manifest. Back up the entire workspace including schemes/. Switching reloads the page and does not carry unsubmitted drafts into another scheme.
+
+See the [implementation and dse_model compatibility review (Chinese)](docs/INDEPENDENT_SCHEMES_AND_MODEL_COMPATIBILITY.md). No dse_model files were changed. Generic schemas require an updated annotation-tool dependency and explicit loss weights for new fields; custom gated inference and C-text require changes to fixed model-side rules and templates.
+
+### JSON rule import and experiment presets
+
+In Fields & rules, choose **Import schema.json**, or select a **Rule preset** and click **Load preset into draft**. Loading replaces the draft. Then validate the migration preview and publish an immutable version. Files use this project's schema format, including exported `annotations/schema.json` and training-run `schema.json`. Publication allocates a local version and validates stable identities, retirement records, and rule dependencies.
+
+| Preset | Active fields |
+| --- | --- |
+| Default eight fields | Original fields and gates for the baseline |
+| Phase and holding | phase, holding |
+| Four state fields | phase, holding, close_readiness, release_readiness |
+| Four state fields with full holding coverage | Four state fields, with holding applicable and required in every phase, including idle |
+
+Candidate JSON files live in `backend/dse_tool/presets/`. Paused fields have both conditions set to false. Exports retain their field/head definitions with zero supervision masks. Full holding coverage requires annotation and review of newly applicable frames. Publication marks historical labels for review through the existing version workflow.
+
+The candidates are based on `yann-real-h3-t4-state-v1` coverage and validation metrics. Training coverage has zero right-arm close-ready examples. The single validation source contains only right-arm idle and 45 left-arm close-readiness examples, all not_ready. At epoch 20, left holding present-class macro F1 is about 0.922 and adviser.y about 0.121. These are candidates for task ablation and additional annotation; performance needs retraining and evaluation. Split coverage, positive examples, and the three annotation time points versus four model time points also need attention in subsequent experiments.
+
 ## Labels and Loss Masks
 
 - `unknown`: a stable integer category meaning insufficient evidence; it may have mask=1 after review.
