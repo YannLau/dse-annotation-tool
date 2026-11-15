@@ -38,14 +38,17 @@
 
 | 环节 | 当前实现 |
 | --- | --- |
-| 依赖 | 模型 pyproject 使用 GitHub main，uv.lock 固定具体提交；2026-11-15 已核对安装为 `7e52c0d02a8c24a2099c4f47715c5eeaa042790e`。`uv sync --locked` 复现，`uv sync --upgrade-package dse-annotation-tool` 主动升级；不要求相邻工具源码 |
+| 依赖 | 模型 pyproject 使用 GitHub main，uv.lock 固定具体提交；2026-11-15 本次校准回归核对安装为 `93fa0e333d051767f54db8689242b2dfbb5a6b1a`。`uv sync --locked` 复现，`uv sync --upgrade-package dse-annotation-tool` 主动升级；不要求相邻工具源码 |
 | 训练与配置 | 动态 each_arm/global 分类头及稳定 ID 映射；`dse init-scheme` 从导出生成完整实验配置、字段损失权重、schema/head/方案快照和导出模板草稿 |
 | 方案身份 | 默认拒绝混合不同 (project_id,id)，显式合并仍要求 schema/layout 相同且同源标签无冲突；原来源划分键不添加方案 ID |
 | 推理门控 | 按 schema 条件树和依赖顺序处理全部 scope、unknown_id、阈值及逐类别连续确认；仅 dse_v1 使用原始一致性约束 |
 | C-text | 支持旧 DSE 词汇、通用字段表达、绑定 schema hash 的逐类别字面映射模板；支持 global，模板内容变化阻止恢复旧导出 |
 | 评估与追踪 | unknown 统计依据 unknown_id；run/checkpoint/校准/sidecar 记录方案；五折校验 schema、方案集合、模板与部署策略一致 |
+| 温度校准（2026-11-15） | 有效样本数足够时允许部分类别覆盖；导出只让本头已覆盖的预测类别进入后续门控，未覆盖类别保留原始预测并记录 class_not_calibrated；适用于全部 categorical 方案 |
 
 每个新方案仍需明确字段权重、采集组划分、输入证据、校准覆盖、阈值与确认策略、文本业务含义及下游 token 预算。任意新业务矛盾/时序语义不能仅凭字段名自动推断；超出 categorical schema 和声明条件树的任务需专门实现并测试。更换方案需要新实验，不能直接复用旧分类头、续训状态或校准报告。
+
+某些定义类别（包括 unknown）从未使用，不再单独导致模型校准关闭整个字段。覆盖依据各 left/right/global 头在独立 calibration 集里的有效真值，不能拿全部标注数量替代。unknown_id 的现有语义继续保留；无需为补齐类别制造 unknown 或把普通标签绑定成 unknown。模型代码升级后，旧实验可重新校准写出 v2 报告，并使用新目录导出 C-text；旧报告不自动提升 usable。改动原理、兼容性与操作见 [部分类别覆盖校准说明](../../dse_model/docs/PARTIAL_COVERAGE_CALIBRATION.md)。
 
 ## 初次验证记录（2026-11-14）
 
