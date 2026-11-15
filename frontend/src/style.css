@@ -809,6 +809,14 @@ nav button {
   border-radius: 8px;
   background: #111c2b;
 }
+.schema-preview-inputs {
+  margin: 18px 0;
+}
+.schema-preview-inputs select {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+}
 .grid2 {
   display: grid;
   grid-template-columns: 1fr 1fr;

@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
-    "test:i18n": "node ../scripts/test_i18n.mjs"
+    "test:i18n": "node ../scripts/test_i18n.mjs",
+    "test:schema-preview": "node ../scripts/test_schema_preview.mjs"
   },
   "dependencies": {
     "react": "19.1.0",

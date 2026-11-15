@@ -38,8 +38,6 @@
   "＋类别": "+ Category",
   "适用条件 applicable_when": "Applicability · applicable_when",
   "必填条件 required_when": "Requiredness · required_when",
-  "左 phase": "Left phase",
-  "右 phase": "Right phase",
   "校验与迁移预览": "Validate & preview migration",
   "新版本已发布，历史值保留并标记待复核": "New version published. Historical values are retained and marked for review.",
   "发布不可变版本": "Publish immutable version",
@@ -740,5 +738,11 @@
   "该方案正在导出，请等待导出完成后再删除": "This scheme is exporting. Wait for the export to finish before deleting.",
   "仅可恢复回收站中的方案": "Only schemes in the trash can be restored",
   "请先将方案移入回收站": "Move the scheme to the trash first",
-  "请输入完整方案名称以确认永久删除": "Enter the full scheme name to confirm permanent deletion"
+  "请输入完整方案名称以确认永久删除": "Enter the full scheme name to confirm permanent deletion",
+  "规则测试值": "Rule test values",
+  "选择示例类别，预览适用与必填条件。测试值仅用于本次规则预览。": "Select example categories to preview applicability and requiredness. Test values are used only for this rule preview.",
+  "未选择测试值": "No test value selected",
+  "规则测试值必须按 left/right/global 提供字段对象": "Rule test values must provide field objects under left/right/global",
+  "规则测试字段不存在或作用域不匹配": "Rule test field is missing or has a mismatched scope",
+  "规则测试类别不属于当前字段": "Rule test category does not belong to the current field"
 }

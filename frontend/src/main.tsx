@@ -18,6 +18,10 @@ import { FrameImageCache } from "./frameImages";
 import FloatingTimeline, { readPanelPosition } from "./FloatingTimeline";
 import type { PanelPosition } from "./FloatingTimeline";
 import LanguageSwitcher from "./LanguageSwitcher";
+import SchemaPreviewInputs, {
+  schemaPreviewValues,
+} from "./SchemaPreviewInputs";
+import type { PreviewValues } from "./SchemaPreviewInputs";
 type Obj = Record<string, any>;
 type FrameSnapshot = {
   context: string;
@@ -588,8 +592,7 @@ function SchemaEditor({
     [index, setIndex] = useState(0),
     [preview, setPreview] = useState<Obj | null>(null),
     [newKey, setNewKey] = useState(""),
-    [lp, setLp] = useState(2),
-    [rp, setRp] = useState(4),
+    [testValues, setTestValues] = useState<PreviewValues>({}),
     [deletion, setDeletion] = useState<Obj | null>(null),
     [deletionHistory, setDeletionHistory] = useState<Obj[]>([]),
     [importing, setImporting] = useState(false),
@@ -609,6 +612,7 @@ function SchemaEditor({
     if (currentDraft.current !== original)
       throw Error("草稿已变化，请重新导入");
     setDraft(result.schema);
+    setTestValues({});
     setIndex(0);
     setPreview(null);
     setDeletion(null);
@@ -677,7 +681,10 @@ function SchemaEditor({
   async function check() {
     try {
       setPreview(
-        await api("/schema/preview", { schema: draft, left: lp, right: rp }),
+        await api("/schema/preview", {
+          schema: draft,
+          values: schemaPreviewValues(draft.fields, testValues),
+        }),
       );
     } catch (e: any) {
       notify(e.message);
@@ -1075,23 +1082,15 @@ function SchemaEditor({
           fields={draft.fields}
           onChange={(v) => update({ required_when: v })}
         />
+        <SchemaPreviewInputs
+          fields={draft.fields}
+          values={testValues}
+          onChange={(values) => {
+            setTestValues(values);
+            setPreview(null);
+          }}
+        />
         <div className="toolbar">
-          <label>
-            {tr("左 phase")}
-            <input
-              type="number"
-              value={lp}
-              onChange={(e) => setLp(+e.target.value)}
-            />
-          </label>
-          <label>
-            {tr("右 phase")}
-            <input
-              type="number"
-              value={rp}
-              onChange={(e) => setRp(+e.target.value)}
-            />
-          </label>
           <button onClick={check}>{tr("校验与迁移预览")}</button>
           <button
             className="primary"
@@ -1118,23 +1117,31 @@ function SchemaEditor({
               {tr(" 条标签需复核。")}
             </p>
             <div className="grid2">
-              {["left", "right"].map((arm) => (
-                <div key={arm}>
-                  <h3>{arm}</h3>
-                  {Object.entries(preview.labels[arm]).map(
-                    ([key, r]: [string, any]) => (
-                      <p key={key}>
-                        {key} · {r.applicability} ·{" "}
-                        {r.required === true
-                          ? tr("必填")
-                          : r.required === null
-                            ? tr("必填未知")
-                            : tr("选填")}
-                      </p>
-                    ),
-                  )}
-                </div>
-              ))}
+              {["left", "right", "global"]
+                .filter(
+                  (arm) => Object.keys(preview.labels[arm] || {}).length > 0,
+                )
+                .map((arm) => (
+                  <div key={arm}>
+                    <h3>
+                      {tr(
+                        arm === "left" ? "左" : arm === "right" ? "右" : "全局",
+                      )}
+                    </h3>
+                    {Object.entries(preview.labels[arm]).map(
+                      ([key, r]: [string, any]) => (
+                        <p key={key}>
+                          {key} · {r.applicability} ·{" "}
+                          {r.required === true
+                            ? tr("必填")
+                            : r.required === null
+                              ? tr("必填未知")
+                              : tr("选填")}
+                        </p>
+                      ),
+                    )}
+                  </div>
+                ))}
             </div>
           </>
         )}

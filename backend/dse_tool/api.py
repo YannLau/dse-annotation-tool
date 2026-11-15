@@ -967,15 +967,34 @@ def create_app(work_root):
     def schema_preview(body: dict):
         schema = prepare_schema(body.get("schema", store.schema()), store.schema())
         validate_schema(schema, store.schema())
+        # 按当前草稿的字段/作用域接收示例类别，不预填旧方案的 phase=2/4。
+        # 旧客户端显式提供 left/right 时仍可测试 phase，且同样经过字段和类别校验。
+        values = body.get("values", {})
+        if "values" not in body and any(arm in body for arm in ("left", "right")):
+            values = {
+                arm: {"phase": body[arm]} for arm in ("left", "right") if arm in body
+            }
+        if not isinstance(values, dict):
+            raise ValueError("规则测试值必须按 left/right/global 提供字段对象")
+        fields = {f["field_id"]: f for f in schema["fields"]}
+        raw = {}
+        for arm, records in values.items():
+            if arm not in ("left", "right", "global") or not isinstance(records, dict):
+                raise ValueError("规则测试值必须按 left/right/global 提供字段对象")
+            raw[arm] = {}
+            for key, value in records.items():
+                field = fields.get(key)
+                if field is None or (arm == "global") != (field["scope"] == "global"):
+                    raise ValueError("规则测试字段不存在或作用域不匹配")
+                if value is not None and (
+                    type(value) is not int
+                    or value not in [c["id"] for c in field["classes"]]
+                ):
+                    raise ValueError("规则测试类别不属于当前字段")
+                raw[arm][key] = {"value_id": value}
         return {
             "migration": store.publish(schema, True),
-            "labels": resolve(
-                schema,
-                {
-                    "left": {"phase": {"value_id": body.get("left", 2)}},
-                    "right": {"phase": {"value_id": body.get("right", 4)}},
-                },
-            ),
+            "labels": resolve(schema, raw),
         }
 
     @app.post("/api/schema")

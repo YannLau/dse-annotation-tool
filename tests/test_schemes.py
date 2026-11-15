@@ -4,6 +4,7 @@ from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor
 
 import pyarrow.parquet as pq
+import pytest
 from PIL import Image
 from fastapi.testclient import TestClient
 
@@ -128,6 +129,95 @@ def test_preview_and_invalid_creation_do_not_change_project(tmp_path):
         ][0]["key"]
         == "new_meaning"
     )
+
+
+def test_rule_preview_uses_current_scheme_fields_and_scopes(tmp_path):
+    app = create_app(tmp_path / "work")
+    client = TestClient(app)
+    schema = unrelated_schema()
+    dependent = copy.deepcopy(schema["fields"][0])
+    dependent.update(
+        field_id="contact.mode",
+        scope="each_arm",
+        applicable_when={"field": "global.quality", "op": "eq", "value": 7},
+        required_when={"field": "global.quality", "op": "eq", "value": 7},
+    )
+    schema["fields"].append(dependent)
+    info, headers = create(client, schema=schema)
+    store, _ = app.state.schemes.get(info["id"])
+    original = store.schema()
+    values = {
+        "global": {"quality": 7},
+        "left": {"contact.mode": 7},
+        "right": {"contact.mode": 99},
+    }
+    response = client.post(
+        "/api/schema/preview", headers=headers, json={"values": values}
+    )
+    assert response.status_code == 200, response.text
+    labels = response.json()["labels"]
+    assert labels["global"]["quality"]["value_id"] == 7
+    assert set(labels["left"]) == set(labels["right"]) == {"contact.mode"}
+    assert labels["left"]["contact.mode"]["applicability"] == "applicable"
+    assert labels["left"]["contact.mode"]["required"] is True
+    assert labels["right"]["contact.mode"]["value_id"] == 99
+    values["global"]["quality"] = 99
+    unknown = client.post(
+        "/api/schema/preview", headers=headers, json={"values": values}
+    ).json()["labels"]
+    assert unknown["left"]["contact.mode"]["applicability"] == "undetermined"
+    empty = client.post("/api/schema/preview", headers=headers, json={}).json()[
+        "labels"
+    ]
+    assert empty["left"]["contact.mode"]["applicability"] == "undetermined"
+    assert empty["global"]["quality"]["value_id"] is None
+    assert store.schema() == original
+    assert all(not rows for rows in store.snapshot().values())
+    assert all(
+        record["effective_loss_mask"] == 0
+        for fields in labels.values()
+        for record in fields.values()
+    )
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        [],
+        {"middle": {}},
+        {"global": []},
+        {"left": {"quality": 7}},
+        {"global": {"phase": 2}},
+        {"global": {"quality": 8}},
+        {"global": {"quality": "7"}},
+        {"global": {"quality": True}},
+    ],
+)
+def test_rule_preview_rejects_values_outside_current_scheme(tmp_path, values):
+    app = create_app(tmp_path / "work")
+    client = TestClient(app)
+    _, headers = create(client)
+    response = client.post(
+        "/api/schema/preview", headers=headers, json={"values": values}
+    )
+    assert response.status_code == 400, response.text
+
+
+def test_rule_preview_does_not_invent_phase_values_and_accepts_legacy_arguments(
+    tmp_path,
+):
+    client = TestClient(create_app(tmp_path / "work"))
+    empty = client.post("/api/schema/preview", json={}).json()["labels"]
+    assert empty["left"]["phase"]["value_id"] is None
+    assert empty["right"]["phase"]["value_id"] is None
+    legacy = client.post("/api/schema/preview", json={"left": 2, "right": 4})
+    assert legacy.status_code == 200, legacy.text
+    assert legacy.json()["labels"]["left"]["phase"]["value_id"] == 2
+    explicit = client.post(
+        "/api/schema/preview", json={"left": 2, "values": {"right": {"phase": 5}}}
+    ).json()["labels"]
+    assert explicit["left"]["phase"]["value_id"] is None
+    assert explicit["right"]["phase"]["value_id"] == 5
 
 
 def test_concurrent_requests_never_cross_schemes(tmp_path):
