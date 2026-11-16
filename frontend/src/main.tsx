@@ -302,6 +302,11 @@ function SchemeManager({
           {tr("标注方案")}
           <select
             aria-label={tr("标注方案")}
+            title={
+              project.scheme?.id === "default"
+                ? tr(project.scheme.name)
+                : project.scheme?.name
+            }
             value={project.scheme?.id || ""}
             disabled={disabled || pending}
             onChange={(e) => switchScheme(e.target.value)}
@@ -2183,13 +2188,6 @@ function App() {
             <small>{tr("双臂观测 · 本地工作台")}</small>
           </div>
         </div>
-        {
-          <SchemeManager
-            project={project || { scheme: null, schema: null }}
-            notify={notify}
-            disabled={busy || choosing || previewLoading || reviewLoading}
-          />
-        }
         <nav>
           {[
             ["work", tr("标注工作台")],
@@ -2214,9 +2212,18 @@ function App() {
             </button>
           ))}
         </nav>
-        <LanguageSwitcher />
-        <span className={"save-dot " + (busy ? "saving" : "")} />
-        <small>{busy ? tr("保存中…") : tr("本地自动保存")}</small>
+        <div className="header-utilities">
+          <LanguageSwitcher />
+          <span className="save-status">
+            <span className={"save-dot " + (busy ? "saving" : "")} />
+            <small>{busy ? tr("保存中…") : tr("本地自动保存")}</small>
+          </span>
+        </div>
+        <SchemeManager
+          project={project || { scheme: null, schema: null }}
+          notify={notify}
+          disabled={busy || choosing || previewLoading || reviewLoading}
+        />
       </header>
       {page !== "inspect" && (
         <div className="import-bar">

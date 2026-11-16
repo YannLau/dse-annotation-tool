@@ -106,15 +106,20 @@ h3 {
 }
 header {
   min-height: 72px;
-  flex-wrap: wrap;
   border-bottom: 1px solid #253042;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "brand navigation utilities"
+    "schemes schemes schemes";
   align-items: center;
-  padding: 0 24px;
-  gap: 12px;
+  padding: 12px 24px;
+  gap: 12px 24px;
   background: #101925;
 }
 .brand {
+  grid-area: brand;
+  min-width: 0;
   display: flex;
   gap: 12px;
   align-items: center;
@@ -137,6 +142,7 @@ header {
   color: #0c3229;
   width: 36px;
   height: 36px;
+  flex-shrink: 0;
   border-radius: 8px;
   display: grid;
   place-items: center;
@@ -144,8 +150,11 @@ header {
   font-size: 24px;
 }
 nav {
-  margin: auto;
+  grid-area: navigation;
+  min-width: 0;
+  margin: 0;
   display: flex;
+  justify-content: center;
   flex-wrap: wrap;
   gap: 8px;
 }
@@ -153,13 +162,27 @@ nav button {
   background: transparent;
   border-color: transparent;
   padding: 10px 17px;
+  white-space: nowrap;
+}
+.header-utilities {
+  grid-area: utilities;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+.save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
 }
 .language-switcher {
   display: flex;
   align-items: center;
   flex-shrink: 0;
   gap: 5px;
-  margin: 8px 0;
+  margin: 0;
   white-space: nowrap;
 }
 .language-switcher > select {
@@ -971,6 +994,23 @@ nav button {
     font-size: 12px;
   }
 }
+@media (max-width: 1400px) {
+  header {
+    padding: 12px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "brand utilities"
+      "navigation navigation"
+      "schemes schemes";
+    gap: 12px;
+  }
+  nav {
+    justify-content: flex-start;
+  }
+  nav button {
+    padding: 8px;
+  }
+}
 @media (max-width: 1150px) {
   .workspace {
     grid-template-columns: 170px minmax(0, 1fr);
@@ -990,15 +1030,6 @@ nav button {
   .viewer-heading {
     display: block;
   }
-  header {
-    padding: 0 12px;
-  }
-  nav button {
-    padding: 8px;
-  }
-  header > small {
-    display: none;
-  }
   .schema-layout {
     grid-template-columns: 170px 1fr;
   }
@@ -1011,15 +1042,18 @@ nav button {
 }
 @media (max-width: 750px) {
   header {
-    height: auto;
     padding: 15px;
-    flex-wrap: wrap;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "brand"
+      "utilities"
+      "navigation"
+      "schemes";
   }
-  .brand {
-    width: 100%;
+  .header-utilities {
+    justify-content: flex-start;
   }
   nav {
-    margin: 10px 0 0;
     gap: 3px;
   }
   .import-bar {
@@ -1361,20 +1395,28 @@ nav button {
 }
 
 .scheme-manager {
-  display: contents;
+  grid-area: schemes;
+  min-width: 0;
+  padding-top: 12px;
+  border-top: 1px solid #253042;
 }
 .scheme-manager > .toolbar {
-  align-items: flex-end;
+  align-items: center;
   gap: 12px;
   max-width: 100%;
+  margin: 0;
 }
 .scheme-manager > .toolbar > label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   min-width: 0;
 }
 .scheme-manager > .toolbar > label > select {
-  width: 180px;
+  width: clamp(240px, 24vw, 360px);
   max-width: 100%;
+  margin: 0;
   text-overflow: ellipsis;
 }
 .scheme-manager > .toolbar > button {
@@ -1390,8 +1432,7 @@ nav button {
   max-width: 1000px;
 }
 .scheme-manager > .scheme-create {
-  order: 1;
-  flex: 0 0 100%;
+  margin-top: 12px;
   min-width: 0;
   max-width: none;
   border-top: 1px solid #253042;
@@ -1404,4 +1445,14 @@ nav button {
 }
 .scheme-create p {
   line-height: 1.6;
+}
+@media (max-width: 750px) {
+  .scheme-manager > .toolbar > label {
+    flex: 1 1 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .scheme-manager > .toolbar > label > select {
+    width: 100%;
+  }
 }
