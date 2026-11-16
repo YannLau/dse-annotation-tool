@@ -29,7 +29,7 @@
 - API `/api/import` 新增 `restore_annotations`。显式 false 仅加载来源；true 恢复标注。省略时，原有方案保留首次导入自动恢复的旧行为，新方案默认 false。已恢复的同一导出不会重复写入。
 - 新方案只保留自身规则历史；从旧规则创建独立身份空间时不继承旧方案的退役 ID 限制。
 - 导出仍使用 LeRobot-v2.1+DSE-1。schema、head_spec、labels、intervals 和历史仅来自当前方案；manifest 新增 `annotation_scheme`（project_id、id、name）。导出线程绑定具体方案和冻结快照，切换页面不改变作业归属。
-- 通用方案不使用原始 phase 数字 ID 的关键阶段采样：key_zone 为 null，除确认事件附近的 key pool 外使用 background pool。固定阶段的自动 adviser 建议被禁用；普通人工标注和声明的门控条件仍可使用。
+- 通用方案不使用原始 phase 数字 ID 的关键阶段采样：key_zone 为 null；导出页可按 left/right/global 字段选择关键类别，任一命中或确认事件附近为 key，其余为 background。不选类别则仅事件邻域为 key。规则及指纹记录于 manifest，不改变分类 schema。固定阶段的自动 adviser 建议被禁用；普通人工标注和声明的门控条件仍可使用。
 - `DSEDataset` 按导出的 schema 解析动态字段，新增 `annotation_scheme` 属性供调用方识别来源方案。原始 Dataset 不需要改变数据格式。
 
 ## dse_model：2026-11-14 已完成独立方案适配

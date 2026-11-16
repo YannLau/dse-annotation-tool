@@ -4,6 +4,27 @@
   background: #0b111b;
   font-size: 13px;
 }
+.key-class-picker {
+  max-height: 420px;
+  overflow-y: auto;
+  margin: 12px 0;
+}
+.key-class-picker details {
+  border: 1px solid #2b3b51;
+  border-radius: 5px;
+  padding: 10px;
+  margin: 8px 0;
+}
+.key-class-picker summary {
+  cursor: pointer;
+}
+.key-class-picker fieldset {
+  min-width: 0;
+  border: 1px solid #2b3b51;
+}
+.key-class-picker label {
+  overflow-wrap: anywhere;
+}
 * {
   box-sizing: border-box;
 }

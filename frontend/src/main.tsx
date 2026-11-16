@@ -22,6 +22,8 @@ import SchemaPreviewInputs, {
   schemaPreviewValues,
 } from "./SchemaPreviewInputs";
 import type { PreviewValues } from "./SchemaPreviewInputs";
+import KeyClassPicker, { keyClassSelection } from "./KeyClassPicker";
+import type { KeyClassRule } from "./KeyClassPicker";
 type Obj = Record<string, any>;
 type FrameSnapshot = {
   context: string;
@@ -1266,6 +1268,7 @@ function App() {
     [destination, setDestination] = useState(""),
     [inspectPath, setInspectPath] = useState(""),
     [ratio, setRatio] = useState(0.7),
+    [keyClasses, setKeyClasses] = useState<KeyClassRule[] | null>(null),
     [cal, setCal] = useState<Obj>({
       verified: false,
       unit: "",
@@ -1541,6 +1544,7 @@ function App() {
     loadProject()
       .then((p) => {
         const pref = p.preferences;
+        if (Array.isArray(pref.keyClasses)) setKeyClasses(pref.keyClasses);
         setFloatingTimelinePosition(
           readPanelPosition(pref.floatingTimelinePosition),
         );
@@ -1616,6 +1620,7 @@ function App() {
           historyConfig,
           historyCapacity,
           floatingTimelinePosition,
+          keyClasses,
         }).catch(fail),
       400,
     );
@@ -1637,7 +1642,16 @@ function App() {
     historyConfig,
     historyCapacity,
     floatingTimelinePosition,
+    keyClasses,
   ]);
+  useEffect(() => {
+    if (!project) return;
+    setKeyClasses((saved) => {
+      if (saved === null) return saved;
+      const valid = keyClassSelection(project.schema.fields, saved);
+      return JSON.stringify(valid) === JSON.stringify(saved) ? saved : valid;
+    });
+  }, [project?.schema]);
   useEffect(() => {
     if (project?.work_root && initial.current)
       localStorage.setItem(
@@ -3834,7 +3848,7 @@ function App() {
           )}
         />
       )}
-      {dataset && page === "export" && (
+      {dataset && project && page === "export" && (
         <section className="settings">
           <span className="eyebrow">PORTABLE LEROBOT v2.1</span>
           <h1>{tr("导出独立片段数据集")}</h1>
@@ -3894,6 +3908,45 @@ function App() {
                 {tr("% / 普通背景")} {Math.round((1 - ratio) * 100)}
                 {tr("%。同源片段保持 split_group；无有效标签的中心不抽样。")}
               </p>
+              <h2>{tr("关键采样类别")}</h2>
+              <p>
+                {tr(
+                  "任一所选类别命中，或处于已确认事件前后约0.25秒内，即进入 key 池；其余进入 background 池。",
+                )}
+              </p>
+              <div className="toolbar">
+                <button onClick={() => setKeyClasses(null)}>
+                  {tr("恢复方案默认类别")}
+                </button>
+                <button onClick={() => setKeyClasses([])}>
+                  {tr("清空类别，仅使用事件")}
+                </button>
+              </div>
+              <KeyClassPicker
+                fields={project.schema.fields}
+                value={keyClassSelection(
+                  project.schema.fields,
+                  keyClasses,
+                  project.default_key_classes,
+                )}
+                onChange={setKeyClasses}
+              />
+              {!keyClassSelection(
+                project.schema.fields,
+                keyClasses,
+                project.default_key_classes,
+              ).length && (
+                <p className="warning">
+                  {tr(
+                    "未选择关键类别：仅已确认事件附近进入 key 池；若没有事件，所有帧进入 background 池。",
+                  )}
+                </p>
+              )}
+              <p>
+                {tr(
+                  "类别选择按标注方案保存；字段或类别删除后，失效选择会被移除。模型训练始终使用模型配置中的采样比例，并重新计算训练权重。",
+                )}
+              </p>
               <button
                 className="primary"
                 disabled={
@@ -3908,6 +3961,12 @@ function App() {
                       key_ratio: ratio,
                       history_config: historyConfig,
                       history_context_seconds: historyCapacity,
+                      key_classes: keyClassSelection(
+                        project.schema.fields,
+                        keyClasses,
+                        project.default_key_classes,
+                      ),
+                      expected_schema_version: project.schema.version,
                     });
                     setJob(j);
                   } catch (e) {

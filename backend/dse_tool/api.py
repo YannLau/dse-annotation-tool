@@ -29,6 +29,7 @@ from .schema import (
 )
 from .assist import event_candidates, adviser_candidate
 from .history import HistoryConfig
+from .sampling import default_key_classes
 from .inspector import ExportInspector, clean
 from .review import review_labels
 from .filesystem import directories, pick_directory
@@ -112,6 +113,8 @@ class ExportRequest(BaseModel):
     dataset: str
     destination: str
     key_ratio: float = Field(default=0.7, ge=0, le=1)
+    key_classes: list[dict] | None = None
+    expected_schema_version: int | None = Field(default=None, ge=1)
     history_config: HistorySettings = Field(default_factory=HistorySettings)
     history_context_seconds: float | None = Field(
         default=None, ge=0, le=3600, allow_inf_nan=False
@@ -395,11 +398,13 @@ def create_app(work_root):
 
     @app.get("/api/project")
     def project():
+        schema = store.schema()
         return {
             "work_root": str(store.root),
             "scheme": store.get("scheme_info"),
             "schemes": schemes.list(),
-            "schema": store.schema(),
+            "schema": schema,
+            "default_key_classes": default_key_classes(schema),
             "datasets": [
                 {
                     "fingerprint": r["fingerprint"],
@@ -1141,6 +1146,8 @@ def create_app(work_root):
             body.key_ratio,
             history_config=body.history_config.config(),
             history_context_seconds=body.history_context_seconds,
+            key_classes=body.key_classes,
+            expected_schema_version=body.expected_schema_version,
         )
 
     @app.get("/api/jobs/{job_id}")

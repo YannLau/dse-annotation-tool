@@ -507,10 +507,26 @@ Role flags **are not mutually exclusive**. A center can also supply history to l
 Under current default semantics:
 
 - `key_zone_*`: 1 for phase 2 or 5, 0 for other known phases, null for missing phase or phase 8. Derived gating information, not extra human ground truth or an independent head.
-- `pool=key`: either arm's phase is in `[2,3,5,7]`, or a confirmed event is nearby. This is broader than key_zone: grasp checking and recovery also enter the key pool.
-- `event_group`: uses the nearest confirmed event's source frame when an event is nearby; otherwise uses both current phase values. Nearby means approximately ±0.25 seconds converted to frame count.
+- `pool=key`: matches any category selected on the export page, or a confirmed event is nearby. Original DSE schemes default to both arms' phase `[2,3,5,7]`; explicit selections replace that set. Generic schemes default to no selected categories.
+- `event_group`: uses the nearest confirmed event's source frame when an event is nearby; otherwise groups by the current category combination of the selected scoped fields. Original DSE defaults retain both phase values as their group. Nearby means approximately ±0.25 seconds converted to frame count.
 
-These are concrete exporter policies. Phase sets and key_zone's default unknown ID use built-in conventions. Adding a phase in the editor does not automatically extend sampling policies or built-in consistency checks. Changes to the core phase protocol must be checked against code and experiment settings.
+The export page's Key sampling categories supports left/right/global fields using stable field/class IDs, saved per scheme. Restore defaults or clear categories; clearing leaves only confirmed event neighborhoods as key, and no events means all background. Deleted categories and changed scopes remove stale selections. Submission checks the schema version, and jobs freeze the selection, labels and events at start.
+
+`manifest.sampling.policy` records the rule version, selected categories, any-match logic, event neighborhood and grouping; `policy_hash` fingerprints the rule independently of selection order. This export policy does not change schema/heads. Generic key_zone remains null and selecting categories does not add prediction heads. Original key_zone phase/unknown conventions remain independent of the sampling selection.
+
+The `/api/export` request accepts these additional parameters, using fields/classes from the current scheme:
+
+```json
+{
+  "key_classes": [
+    {"arm": "left", "field_id": "contact.mode", "class_ids": [7, 23]},
+    {"arm": "global", "field_id": "quality", "class_ids": [7]}
+  ],
+  "expected_schema_version": 1
+}
+```
+
+The existing dataset/destination parameters and scheme request header are still required. Omitted/null key_classes uses scheme defaults; explicit `[]` uses events only. A mismatched expected_schema_version rejects export so stale UI selections are never interpreted under a new schema.
 
 Event-group strings are internal statistics/sampling identifiers rather than stable semantic categories. Derived key_zone/pool values do not imply human review.
 
@@ -523,6 +539,8 @@ By default, probability mass is split 70% key / 30% background, then divided acr
 The 70%/30% ratio is a **sampling target**. It neither deletes data nor guarantees exactly that ratio in each finite batch. Ordinary random DataLoader iteration does not automatically honor these weights. `DSEDataset.sample_indices` samples with replacement using the weights and raises if all weights are zero.
 
 Sampling weights do not change field validity, replace loss masks, or necessarily need multiplying into the loss again. After splitting data, recheck pool ratios and group balance within the training subset. Weights computed over the entire export do not guarantee the same ratio after filtering sources.
+
+`dse_model` consumes `pool/event_group` and always uses its own `sampling.key_ratio`, recomputing weights after training splits, merging and deduplication. It does not adopt export ratios or per-frame weights. Export rules are recorded in training artifacts/checkpoints. Duplicate source frames with equal labels but conflicting pool/event_group are rejected; align and re-export their rules or select one copy.
 
 ## 10. source_map.parquet: Source and Media Mapping
 

@@ -744,5 +744,18 @@
   "未选择测试值": "No test value selected",
   "规则测试值必须按 left/right/global 提供字段对象": "Rule test values must provide field objects under left/right/global",
   "规则测试字段不存在或作用域不匹配": "Rule test field is missing or has a mismatched scope",
-  "规则测试类别不属于当前字段": "Rule test category does not belong to the current field"
+  "规则测试类别不属于当前字段": "Rule test category does not belong to the current field",
+  "关键采样类别": "Key sampling categories",
+  "已选 {0} 项": "{0} selected",
+  "任一所选类别命中，或处于已确认事件前后约0.25秒内，即进入 key 池；其余进入 background 池。": "A match in any selected category, or a confirmed event within about 0.25 seconds, places a frame in the key pool; other frames enter the background pool.",
+  "恢复方案默认类别": "Restore scheme defaults",
+  "清空类别，仅使用事件": "Clear categories, use events only",
+  "未选择关键类别：仅已确认事件附近进入 key 池；若没有事件，所有帧进入 background 池。": "No key categories selected: only frames near confirmed events enter the key pool; without events, all frames enter the background pool.",
+  "类别选择按标注方案保存；字段或类别删除后，失效选择会被移除。模型训练始终使用模型配置中的采样比例，并重新计算训练权重。": "Category selections are saved per scheme; deleted fields or categories are removed from the selection. Model training always uses its own configured sampling ratio and recomputes training weights.",
+  "关键类别配置必须为数组": "Key category selections must be an array",
+  "关键类别配置需要 arm、field_id 和 class_ids": "Key category selections require arm, field_id and class_ids",
+  "关键类别引用未知字段": "Key category selection references an unknown field",
+  "关键类别作用域与字段不一致": "Key category scope does not match the field",
+  "关键类别包含无效类别 ID": "Key category selection contains invalid class IDs",
+  "标注规则版本已变化，请刷新后重新选择关键类别": "The schema version has changed; refresh and select key categories again"
 }

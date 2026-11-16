@@ -507,10 +507,26 @@ provenance 内的窗口不是自动重写的当前导出坐标：再次裁剪后
 当前默认语义下：
 
 - `key_zone_*`：phase 为 2 或 5 时为 1；其他明确阶段为 0；phase 缺失或为 8 时为 null。它是从阶段派生的门控信息，不是额外人工真值或独立预测头。
-- `pool=key`：任一臂 phase 属于 `[2,3,5,7]`，或者接近 confirmed 事件；因此它比 key_zone 更宽，抓持检查和恢复也会进入关键采样池。
-- `event_group`：附近有 confirmed 事件时使用最近事件的源帧构成组名，否则使用两臂当前 phase 值构成组名。邻近判断为约 ±0.25 秒对应的帧数。
+- `pool=key`：命中导出页选择的任一关键类别，或者接近 confirmed 事件。原始 DSE 方案默认预填左右臂 phase `[2,3,5,7]`；修改后以本次选择为准，不叠加旧阶段集合。通用方案默认不预选类别。
+- `event_group`：附近有 confirmed 事件时使用最近事件的源帧构成组名；其他帧按所选字段在各作用域的当前类别组合分组。原始 DSE 默认配置继续使用两臂 phase 组合。邻近判断为约 ±0.25 秒对应的帧数。
 
-这些是当前导出器的具体策略，其中阶段集合和 key_zone 的默认 unknown ID 使用内置约定。仅在 schema 编辑器增加新阶段，不会自动扩展采样策略或内置语义校验；更改核心阶段协议时须同时核对代码和实验配置。
+导出页的“关键采样类别”支持 left/right/global 字段，使用稳定字段/类别 ID，选择按方案保存。可恢复方案默认或清空类别；清空后仅确认事件附近为 key，没有事件则全部为 background。类别删除/作用域变化后失效选择会移除，提交时检查 schema 版本，作业开始后冻结类别配置、标签和事件。
+
+`manifest.sampling.policy` 记录规则版本、关键类别、任一命中逻辑、事件邻域和分组方式，`policy_hash` 为规则指纹。这是导出策略，不改变 schema/head；同样的选择顺序不影响指纹。通用方案的 key_zone 仍为 null，关键采样类别不会生成额外预测头；原始 key_zone 的阶段及 unknown ID 约定也不随采样选择变化。
+
+API `/api/export` 可添加以下参数（字段和类别须属于当前方案）：
+
+```json
+{
+  "key_classes": [
+    {"arm": "left", "field_id": "contact.mode", "class_ids": [7, 23]},
+    {"arm": "global", "field_id": "quality", "class_ids": [7]}
+  ],
+  "expected_schema_version": 1
+}
+```
+
+仍须提供原有的 dataset、destination 等参数，并绑定当前方案请求头。省略 key_classes 或传 null 使用方案默认，显式 `[]` 仅使用事件；expected_schema_version 不匹配时拒绝导出，避免旧页面按新规则解释选择。
 
 事件组的字符串是内部统计/采样标识，不能当作稳定语义类别；key_zone/pool 的派生也不代表它们已经人工审核。
 
@@ -523,6 +539,8 @@ provenance 内的窗口不是自动重写的当前导出坐标：再次裁剪后
 这里 70%/30% 是**抽样时的目标比例**，不会删除 70% 以外的数据，也不保证每一个有限 batch 都精确 70/30；普通 DataLoader 随机遍历不会自动执行这些权重。`DSEDataset.sample_indices` 使用有放回加权抽样；全无非零权重时明确报错。
 
 采样权重不改变每字段是否有效，不应直接替代 loss mask，也不必再机械地乘进损失。训练集划分后，应在训练子集内重新检查池比例和组均衡；按全导出计算的权重，在过滤部分来源后不保证仍是同一比例。
+
+`dse_model` 只消费 `pool/event_group`，始终使用模型自己的 `sampling.key_ratio`，在训练划分、合并和去重后重新计算权重，不读取导出比例或逐帧权重。采样规则写入训练记录和检查点；同源同标签但 pool/event_group 冲突的导出不能静默去重，须统一规则并重新导出或选择其中一份。
 
 ## 10. source_map.parquet：来源与媒体对应
 

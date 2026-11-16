@@ -18,6 +18,7 @@ from .dataset import Dataset, content_fingerprint
 from .schema import digest, head_spec
 from . import __version__
 from .history import HistoryConfig
+from .sampling import sampling_policy, sampling_metadata, sample_pool_group
 
 
 def write_json(path, obj):
@@ -47,6 +48,8 @@ class Exporter:
         *,
         history_config=None,
         history_context_seconds=None,
+        key_classes=None,
+        expected_schema_version=None,
     ):
         history_config = HistoryConfig.from_dict(history_config)
         history_context_seconds = (
@@ -93,6 +96,12 @@ class Exporter:
                 raise ValueError("请先选择训练中心区间")
             frozen = self.store.snapshot()
             schema = self.store.schema()
+            if (
+                expected_schema_version is not None
+                and schema["version"] != expected_schema_version
+            ):
+                raise ValueError("标注规则版本已变化，请刷新后重新选择关键类别")
+            policy = sampling_policy(schema, key_classes)
             schema_history = [
                 json.loads(r["payload"])
                 for r in self.store.db.execute(
@@ -107,6 +116,7 @@ class Exporter:
             "started": time.time(),
             "error": None,
             "annotation_scheme": self.store.get("scheme_info"),
+            "sampling": sampling_metadata(policy),
         }
         cancel = threading.Event()
         self.cancels[job["id"]] = cancel
@@ -126,6 +136,7 @@ class Exporter:
                 schema_history,
                 history_config,
                 history_context_seconds,
+                policy,
             ),
             daemon=True,
         )
@@ -147,6 +158,7 @@ class Exporter:
         schema_history=None,
         history_config=None,
         history_context_seconds=None,
+        policy=None,
     ):
         history_config = HistoryConfig.from_dict(history_config)
         history_context_seconds = (
@@ -166,6 +178,7 @@ class Exporter:
                 raise InterruptedError("用户取消")
 
         try:
+            policy = policy if policy is not None else sampling_policy(schema)
             update(status="running")
             check()
             new_fp, _ = content_fingerprint(dataset.root)
@@ -199,6 +212,7 @@ class Exporter:
             ep_meta = []
             ep_stats = []
             global_index = 0
+            event_cache = {}
             summary = {
                 "complete": 0,
                 "partial": 0,
@@ -289,26 +303,22 @@ class Exporter:
                         else None
                         for a in ["left", "right"]
                     ]
-                    event_rows = frozen_store.db.execute(
-                        "SELECT frame FROM events WHERE source=? AND status='confirmed'",
-                        (source,),
-                    ).fetchall()
-                    event_near = any(
-                        abs(e["frame"] - source_frame) <= round(0.25 * info["fps"])
-                        for e in event_rows
+                    if source not in event_cache:
+                        event_cache[source] = [
+                            e["frame"]
+                            for e in frozen_store.db.execute(
+                                "SELECT frame FROM events WHERE source=? AND status='confirmed' ORDER BY frame",
+                                (source,),
+                            )
+                        ]
+                    pool, event_group = sample_pool_group(
+                        policy,
+                        source,
+                        source_frame,
+                        effective,
+                        event_cache[source],
+                        info["fps"],
                     )
-                    event_group = (
-                        source
-                        + ":event:"
-                        + str(
-                            min(
-                                event_rows, key=lambda e: abs(e["frame"] - source_frame)
-                            )["frame"]
-                        )
-                        if event_near
-                        else source + ":phase:" + str(phase_values)
-                    )
-                    key = any(p in [2, 3, 5, 7] for p in phase_values) or event_near
                     valid = 0
                     required = 0
                     missing = 0
@@ -389,7 +399,7 @@ class Exporter:
                             "source_frame_index": source_frame,
                             "split_group": group,
                             "event_group": event_group,
-                            "pool": "key" if key else "background",
+                            "pool": pool,
                             "valid_fields": valid,
                             "sampling_weight": 0.0,
                             "boundary": any(
@@ -755,7 +765,11 @@ class Exporter:
                     },
                     "history_sampling": history_config.to_dict(),
                     "selections": selections,
-                    "sampling": {"key_ratio": key_ratio, "group_first": True},
+                    "sampling": {
+                        "key_ratio": key_ratio,
+                        "group_first": True,
+                        **sampling_metadata(policy),
+                    },
                     "encoding": {
                         "codec": "libx264",
                         "crf": 18,
