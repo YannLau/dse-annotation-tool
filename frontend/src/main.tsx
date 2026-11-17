@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import "./style.css";
 import ExportInspector from "./ExportInspector";
+import BehaviorCalibration from "./BehaviorCalibration";
 import DirectoryPicker from "./DirectoryPicker";
 import { FrameImageCache } from "./frameImages";
 import FloatingTimeline, { readPanelPosition } from "./FloatingTimeline";
@@ -1269,18 +1270,6 @@ function App() {
     [inspectPath, setInspectPath] = useState(""),
     [ratio, setRatio] = useState(0.7),
     [keyClasses, setKeyClasses] = useState<KeyClassRule[] | null>(null),
-    [cal, setCal] = useState<Obj>({
-      verified: false,
-      unit: "",
-      closed_threshold: 0.1,
-      open_threshold: 0.8,
-      closed_below: true,
-      min_duration: 0.1,
-    }),
-    [assistArm, setAssistArm] = useState("left"),
-    [assistFeature, setAssistFeature] = useState("observation.state"),
-    [assistDim, setAssistDim] = useState(7),
-    [suggestion, setSuggestion] = useState<Obj | null>(null),
     [coordinate, setCoordinate] = useState<Obj>({
       verified: false,
       unit: "m",
@@ -1294,6 +1283,7 @@ function App() {
         [0, 0, 0, 1],
       ],
     }),
+    [behaviorSettings, setBehaviorSettings] = useState<Obj>({}),
     [taskSettings, setTaskSettings] = useState<Obj>({
       target: "",
       support: "",
@@ -1518,15 +1508,6 @@ function App() {
       if (d.root) setPath(d.root);
       if (key !== datasetKey) {
         setTracks(defaultTracks(d.info));
-        setAssistDim(
-          Math.max(
-            0,
-            featureNames(d.info.features["observation.state"]).findIndex((s) =>
-              /gripper/i.test(s),
-            ),
-          ),
-        );
-        setCal((c) => ({ ...c, verified: false }));
       }
       setDatasetKey(key);
       setEpisode(e);
@@ -1560,6 +1541,7 @@ function App() {
         if (pref.tracks) setTracks(pref.tracks);
         if (pref.mode) setMode(pref.mode);
         if (pref.taskSettings) setTaskSettings(pref.taskSettings);
+        if (pref.behaviorSettings) setBehaviorSettings(pref.behaviorSettings);
         if (pref.coordinate) setCoordinate(pref.coordinate);
         if (pref.futureHorizon) setFutureHorizon(pref.futureHorizon);
         if (pref.historyConfig) {
@@ -1599,31 +1581,31 @@ function App() {
       })
       .catch(fail);
   }, []);
+  function savePreferences() {
+    return api("/preferences", {
+      datasetKey,
+      episode,
+      frame,
+      mode,
+      tracks,
+      taskSettings,
+      behaviorSettings,
+      coordinate,
+      range,
+      zoom,
+      speed,
+      interval,
+      batchDraft,
+      futureHorizon,
+      historyConfig,
+      historyCapacity,
+      floatingTimelinePosition,
+      keyClasses,
+    });
+  }
   useEffect(() => {
     if (!initial.current) return;
-    const id = setTimeout(
-      () =>
-        api("/preferences", {
-          datasetKey,
-          episode,
-          frame,
-          mode,
-          tracks,
-          taskSettings,
-          coordinate,
-          range,
-          zoom,
-          speed,
-          interval,
-          batchDraft,
-          futureHorizon,
-          historyConfig,
-          historyCapacity,
-          floatingTimelinePosition,
-          keyClasses,
-        }).catch(fail),
-      400,
-    );
+    const id = setTimeout(() => savePreferences().catch(fail), 400);
     return () => clearTimeout(id);
   }, [
     datasetKey,
@@ -1632,6 +1614,7 @@ function App() {
     mode,
     tracks,
     taskSettings,
+    behaviorSettings,
     coordinate,
     range,
     zoom,
@@ -3485,360 +3468,39 @@ function App() {
           }}
         />
       )}
-      {dataset && page === "assist" && (
-        <section className="settings">
-          <span className="eyebrow">BEHAVIOR REVIEW</span>
-          <h1>{tr("校准与辅助审核")}</h1>
-          <p>
-            {tr(
-              "所有自动输出都保持 suggestion，须人工核对。状态字段请在状态模式修改。",
-            )}
-          </p>
-          <div className="grid2">
-            <article>
-              <h2>{tr("任务与几何参考")}</h2>
-              {Object.entries({
-                target: tr("目标抓取部位"),
-                support: tr("承接区域"),
-                gripper_width: tr("夹爪最大开口宽度 W（注明单位）"),
-                calibration_notes: tr("标定说明"),
-              }).map(([k, label]) => (
-                <label key={k}>
-                  {tr(label)}
-                  <input
-                    value={taskSettings[k]}
-                    onChange={(e) =>
-                      setTaskSettings({ ...taskSettings, [k]: e.target.value })
-                    }
-                  />
-                </label>
-              ))}
-              <h2>{tr("动作片段质量")}</h2>
-              <p>
-                EP {episode} · [{range[0]}, {range[1]})
-              </p>
-              {["approved", "rejected", "unreviewed"].map((status) => (
-                <button
-                  key={status}
-                  onClick={() =>
-                    mutate("/reviews", {
-                      dataset: datasetKey,
-                      episode,
-                      start: range[0],
-                      end: range[1],
-                      status,
-                      reason: taskSettings.review_reason || "",
-                    })
-                  }
-                >
-                  {status}
-                </button>
-              ))}
-              <label>
-                {tr("原因")}
-                <input
-                  value={taskSettings.review_reason || ""}
-                  onChange={(e) =>
-                    setTaskSettings({
-                      ...taskSettings,
-                      review_reason: e.target.value,
-                    })
-                  }
-                />
-              </label>
-              <h2>{tr("手动事件")}</h2>
-              <select
-                value={assistArm}
-                onChange={(e) => setAssistArm(e.target.value)}
-              >
-                <option value="left">{tr("左臂")}</option>
-                <option value="right">{tr("右臂")}</option>
-              </select>
-              {["open", "closed"].map((type) => (
-                <button
-                  key={type}
-                  onClick={() =>
-                    mutate("/events", {
-                      dataset: datasetKey,
-                      episode,
-                      frame,
-                      arm: assistArm,
-                      type,
-                    })
-                  }
-                >
-                  #{frame} {type}
-                </button>
-              ))}
-              <p>
-                {tr("在行为复核时间轴点击候选可跳转。当前源帧 #")}
-                {frame}。
-              </p>
-              {view?.events.map((ev: Obj) => (
-                <div className="event-row" key={ev.id}>
-                  <span>
-                    #{ev.frame} {ev.arm} · {ev.type} · {ev.status} ·{" "}
-                    {JSON.parse(ev.details || "{}").feature === "action"
-                      ? tr("命令事件")
-                      : JSON.parse(ev.details || "{}").feature ===
-                          "observation.state"
-                        ? tr("实测反馈事件")
-                        : tr("人工事件")}
-                  </span>
-                  <button
-                    onClick={() => {
-                      setFrame(ev.frame - (view.source_key.frame - view.frame));
-                      setMode("behavior");
-                      setPage("work");
-                    }}
-                  >
-                    {tr("定位")}
-                  </button>
-                  <button
-                    onClick={() => {
-                      const f = ev.frame - (view.source_key.frame - view.frame);
-                      setRange([
-                        Math.max(0, f - Math.round(fps * 0.5)),
-                        Math.min(n, f + Math.round(fps * 0.5) + 1),
-                      ]);
-                      setFrame(f);
-                      setPage("work");
-                    }}
-                  >
-                    {tr("选择附近 ±0.5秒")}
-                  </button>
-                  <button
-                    onClick={() =>
-                      mutate("/events", {
-                        dataset: datasetKey,
-                        episode,
-                        frame: ev.frame - (view.source_key.frame - view.frame),
-                        arm: ev.arm,
-                        type: ev.type,
-                        id: ev.id,
-                        status: "confirmed",
-                      })
-                    }
-                  >
-                    {tr("确认")}
-                  </button>
-                  <button
-                    onClick={() =>
-                      mutate("/events", {
-                        dataset: datasetKey,
-                        episode,
-                        frame,
-                        arm: ev.arm,
-                        type: ev.type,
-                        id: ev.id,
-                        status: "confirmed",
-                      })
-                    }
-                  >
-                    {tr("边界改为当前帧")}
-                  </button>
-                </div>
-              ))}
-            </article>
-            <article>
-              <h2>{tr("夹爪事件候选")}</h2>
-              <label>
-                {tr("来源")}
-                <select
-                  value={assistFeature}
-                  onChange={(e) => setAssistFeature(e.target.value)}
-                >
-                  <option value="observation.state">
-                    {tr("实测反馈 observation.state")}
-                  </option>
-                  <option value="action">{tr("动作命令 action")}</option>
-                </select>
-              </label>
-              <label>
-                {tr("具名通道")}
-                <select
-                  value={assistDim}
-                  onChange={(e) => setAssistDim(+e.target.value)}
-                >
-                  {featureNames(dataset.info.features[assistFeature]).map(
-                    (s: string, i: number) => (
-                      <option key={i} value={i}>
-                        {i} · {s}
-                      </option>
-                    ),
-                  )}
-                </select>
-              </label>
-              <label>
-                {tr("单位")}
-                <input
-                  value={cal.unit}
-                  onChange={(e) => setCal({ ...cal, unit: e.target.value })}
-                />
-              </label>
-              {[
-                ["closed_threshold", tr("闭合阈值")],
-                ["open_threshold", tr("打开阈值")],
-                ["min_duration", tr("最短持续秒")],
-              ].map(([key, label]) => (
-                <label key={key}>
-                  {tr(label)}
-                  <input
-                    type="number"
-                    step="0.001"
-                    value={cal[key]}
-                    onChange={(e) => setCal({ ...cal, [key]: +e.target.value })}
-                  />
-                </label>
-              ))}
-              <label>
-                <input
-                  type="checkbox"
-                  checked={cal.closed_below}
-                  onChange={(e) =>
-                    setCal({ ...cal, closed_below: e.target.checked })
-                  }
-                />
-                {tr("较小数值为闭合")}
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={cal.verified}
-                  onChange={(e) =>
-                    setCal({ ...cal, verified: e.target.checked })
-                  }
-                />
-                {tr("已核对单位、方向与滞回配置")}
-              </label>
-              <button
-                className="primary"
-                onClick={() => {
-                  setMode("behavior");
-                  mutate("/events/suggest", {
-                    dataset: datasetKey,
-                    episode,
-                    arm: assistArm,
-                    feature: assistFeature,
-                    dimension: assistDim,
-                    calibration: cal,
-                  });
-                }}
-              >
-                {tr("生成事件建议")}
-              </button>
-              <h2>{tr("adviser 方向预标注")}</h2>
-              <p>
-                {tr(
-                  "规范基座系 +X前 / +Y左 / +Z上；使用已审核、连续0.1–0.25秒实测位移。",
-                )}
-              </p>
-              <label>
-                {tr("坐标变换 4×4（JSON）")}
-                <textarea
-                  defaultValue={JSON.stringify(coordinate.transform)}
-                  onBlur={(e) => {
-                    try {
-                      setCoordinate({
-                        ...coordinate,
-                        transform: JSON.parse(e.target.value),
-                      });
-                    } catch {
-                      fail(Error("变换矩阵需要有效 JSON"));
-                    }
-                  }}
-                />
-              </label>
-              <label>
-                {tr("静止位置噪声（米）")}
-                <input
-                  type="number"
-                  step="0.001"
-                  value={coordinate.position_noise}
-                  onChange={(e) =>
-                    setCoordinate({
-                      ...coordinate,
-                      position_noise: +e.target.value,
-                    })
-                  }
-                />
-              </label>
-              <label>
-                {tr("静止角噪声（弧度）")}
-                <input
-                  type="number"
-                  step="0.001"
-                  value={coordinate.angle_noise}
-                  onChange={(e) =>
-                    setCoordinate({
-                      ...coordinate,
-                      angle_noise: +e.target.value,
-                    })
-                  }
-                />
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={coordinate.verified}
-                  onChange={(e) =>
-                    setCoordinate({ ...coordinate, verified: e.target.checked })
-                  }
-                />
-                {tr("已验证米制单位与 robot_base 变换")}
-              </label>
-              <button
-                onClick={async () => {
-                  try {
-                    const r = await api("/adviser/suggest", {
-                      dataset: datasetKey,
-                      episode,
-                      frame,
-                      arm: assistArm,
-                      calibration: coordinate,
-                    });
-                    setSuggestion(r);
-                  } catch (e) {
-                    fail(e);
-                  }
-                }}
-              >
-                {tr("计算当前帧建议")}
-              </button>
-              {suggestion && (
-                <div className="batch-preview">
-                  {suggestion.reason && <p>{tr(suggestion.reason)}</p>}
-                  <pre>{JSON.stringify(suggestion, null, 2)}</pre>
-                  <button
-                    disabled={!suggestion.values}
-                    onClick={async () => {
-                      setMode("behavior");
-                      for (const [key, value] of Object.entries(
-                        suggestion.values || {},
-                      ))
-                        await mutate("/annotations", {
-                          dataset: datasetKey,
-                          episode,
-                          start: frame,
-                          end: frame + 1,
-                          arm: assistArm,
-                          field: "adviser." + key,
-                          value,
-                          mode: "behavior",
-                          point: true,
-                          label_source: "rule_suggestion",
-                          provenance: suggestion,
-                        });
-                      notify("候选已保存为草稿，仍需人工审核");
-                    }}
-                  >
-                    {tr("接受为草稿")}
-                  </button>
-                </div>
-              )}
-            </article>
-          </div>
-        </section>
+      {dataset && schema && page === "assist" && (
+        <BehaviorCalibration
+          disabled={choosing || !aligned || busy}
+          datasetKey={datasetKey}
+          dataset={dataset}
+          schema={schema}
+          project={project}
+          view={view}
+          episode={episode}
+          frame={frame}
+          range={range}
+          fps={fps}
+          frameCount={n}
+          api={api}
+          onChanged={() => setRefresh((x) => x + 1)}
+          notify={notify}
+          onError={fail}
+          onLocate={(f: number) => {
+            setFrame(f);
+            setMode("behavior");
+            setPage("work");
+          }}
+          onSelectRange={(a: number, b: number, f: number) => {
+            setRange([a, b]);
+            setFrame(f);
+            setMode("behavior");
+            setPage("work");
+          }}
+          taskSettings={taskSettings}
+          onTaskSettingsChange={setTaskSettings}
+          settings={behaviorSettings}
+          onSettingsChange={setBehaviorSettings}
+        />
       )}
       {page === "inspect" && (
         <ExportInspector
@@ -3955,6 +3617,7 @@ function App() {
                 }
                 onClick={async () => {
                   try {
+                    await savePreferences();
                     const j = await api("/export", {
                       dataset: datasetKey,
                       destination,

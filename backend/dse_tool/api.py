@@ -27,7 +27,8 @@ from .schema import (
     import_schema,
     default_schema,
 )
-from .assist import event_candidates, adviser_candidate
+from .adviser import install_adviser_routes
+from .events import channel_catalog, preview_events, save_events
 from .history import HistoryConfig
 from .sampling import default_key_classes
 from .inspector import ExportInspector, clean
@@ -148,6 +149,7 @@ def create_app(work_root):
     exporter = schemes.exporter
     datasets = {}
     inspectors = {}
+    event_plans = {}
     media_lock = threading.RLock()
     app.state.store = registry
     app.state.exporter = schemes.instances["default"][1]
@@ -578,6 +580,38 @@ def create_app(work_root):
                             "INSERT INTO selections(dataset,episode,start,end) VALUES(?,?,?,?)",
                             (fingerprint, e, a, b),
                         )
+                protocol_path = root / "annotations/behavior_protocol.json"
+                if protocol_path.is_file():
+                    protocol = json.loads(protocol_path.read_text())
+                    if protocol.get("version") != 1 or protocol.get(
+                        "schema_hash"
+                    ) != digest(schema):
+                        raise ValueError("行为协议版本或 schema 指纹无效")
+                    pref = store.get("preferences", {})
+                    behavior = pref.setdefault("behaviorSettings", {})
+                    original_key = protocol.get("source_fingerprint", "")
+                    imported = protocol.get("behavior_settings", {})
+                    target_profiles = behavior.setdefault("profiles", {})
+                    for arm in ("left", "right"):
+                        profile = imported.get("profiles", {}).get(
+                            original_key + ":" + arm
+                        )
+                        if profile:
+                            profile = json.loads(json.dumps(profile))
+                            for name in ("coordinate", "event"):
+                                if isinstance(profile.get(name), dict):
+                                    profile[name]["verified"] = False
+                                    profile[name].pop("binding", None)
+                            target_profiles.setdefault(fingerprint + ":" + arm, profile)
+                    behavior.setdefault("datasets", {}).setdefault(
+                        fingerprint, {"taskSettings": protocol.get("task_settings", {})}
+                    )
+                    pref["restoredBehaviorProtocol"] = {
+                        "source_fingerprint": original_key,
+                        "annotation_scheme": protocol.get("annotation_scheme"),
+                        "legacy_task_notes": protocol.get("legacy_task_notes", {}),
+                    }
+                    store.set("preferences", pref)
                 store.set("restored_annotation_sources", [*restored, fingerprint])
             store.history_barrier()
             store.db.commit()
@@ -1030,102 +1064,134 @@ def create_app(work_root):
             )
         return {"saved": True}
 
+    def event_record(body):
+        ds = get_dataset(body["dataset"])
+        source, _, _ = ds.source_key(body["episode"], 0, body["dataset"])
+        record = store.db.execute(
+            "SELECT * FROM events WHERE id=? AND source=?", (body["id"], source)
+        ).fetchone()
+        if record is None:
+            raise ValueError("事件已删除或不属于当前来源")
+        return record
+
     @app.post("/api/events")
     def events(body: dict):
         ds = get_dataset(body["dataset"])
         bounds(ds, body["episode"], body["frame"], body["frame"] + 1)
         source, sf, _ = ds.source_key(body["episode"], body["frame"], body["dataset"])
-        with store.transaction("手动事件/确认候选"):
+        if body.get("arm") not in ("left", "right") or (
+            not body.get("id") and body.get("type") not in ("open", "closed")
+        ):
+            raise ValueError("请选择有效的手臂与开合事件类型")
+        status = body.get("status", "confirmed")
+        if status not in ("confirmed", "suggestion", "rejected"):
+            raise ValueError("无效的事件状态")
+        with store.lock:
             if body.get("id"):
+                record = event_record(body)
+                if body.get("type") not in ("open", "closed", record["type"]):
+                    raise ValueError("请选择有效的手臂与开合事件类型")
+            with store.transaction("手动事件/确认候选"):
+                if body.get("id"):
+                    store.db.execute(
+                        "UPDATE events SET frame=?,type=?,status=? WHERE id=? AND source=?",
+                        (sf, body["type"], status, body["id"], source),
+                    )
+                else:
+                    duplicate = store.db.execute(
+                        "SELECT 1 FROM events WHERE source=? AND frame=? AND arm=? AND type=? AND details=?",
+                        (
+                            source,
+                            sf,
+                            body["arm"],
+                            body["type"],
+                            json.dumps({"source": "human"}),
+                        ),
+                    ).fetchone()
+                    if duplicate:
+                        return {"saved": 0, "skipped": 1}
+                    store.db.execute(
+                        "INSERT INTO events(source,frame,arm,type,status,details) VALUES(?,?,?,?,?,?)",
+                        (
+                            source,
+                            sf,
+                            body["arm"],
+                            body["type"],
+                            status,
+                            json.dumps({"source": "human"}),
+                        ),
+                    )
+        return {"saved": 1}
+
+    @app.post("/api/events/delete")
+    def delete_event(body: dict):
+        with store.lock:
+            record = event_record(body)
+            with store.transaction("删除事件"):
+                store.db.execute("DELETE FROM events WHERE id=?", (record["id"],))
+        return {"deleted": 1}
+
+    @app.post("/api/events/reject")
+    def reject_event(body: dict):
+        with store.lock:
+            record = event_record(body)
+            with store.transaction("拒绝事件候选"):
                 store.db.execute(
-                    "UPDATE events SET frame=?,type=?,status=? WHERE id=? AND source=?",
-                    (
-                        sf,
-                        body["type"],
-                        body.get("status", "confirmed"),
-                        body["id"],
-                        source,
-                    ),
+                    "UPDATE events SET status='rejected' WHERE id=?", (record["id"],)
                 )
-            else:
-                store.db.execute(
-                    "INSERT INTO events(source,frame,arm,type,status,details) VALUES(?,?,?,?,?,?)",
-                    (
-                        source,
-                        sf,
-                        body["arm"],
-                        body["type"],
-                        body.get("status", "confirmed"),
-                        json.dumps({"source": "human"}),
-                    ),
-                )
-        return {"saved": True}
+        return {"rejected": 1}
+
+    @app.get("/api/event-channels/{key}")
+    def event_channels(key: str):
+        return {
+            "channels": channel_catalog(get_dataset(key).info),
+            "schema_version": store.schema()["version"],
+            "revision": store.get("revision", 0),
+        }
+
+    def event_preview(body, legacy=False):
+        ds = get_dataset(body["dataset"])
+        start, end = (
+            body.get("start", 0),
+            body.get("end", len(ds.rows(body["episode"]))),
+        )
+        if type(start) is not int or type(end) is not int:
+            raise ValueError("事件范围必须使用整数帧")
+        bounds(ds, body["episode"], start, end)
+        return preview_events(
+            store, ds, body["dataset"], body, start, end, legacy=legacy
+        )
+
+    @app.post("/api/events/preview")
+    def preview_event_candidates(body: dict):
+        with store.lock:
+            result = event_preview(body)
+            if len(event_plans) >= 32:
+                event_plans.pop(next(iter(event_plans)))
+            plan_id = str(uuid.uuid4())
+            event_plans[plan_id] = result
+            return {**result, "plan_id": plan_id}
+
+    @app.post("/api/events/apply")
+    def apply_event_candidates(body: dict):
+        with store.lock:
+            plan = event_plans.get(body.get("plan_id"))
+            current = event_preview(body)
+            if plan is None or current != plan:
+                raise ValueError("事件候选已过期，请重新预览")
+            result = save_events(store, current)
+            event_plans.pop(body["plan_id"], None)
+            return result
 
     @app.post("/api/events/suggest")
     def suggest_events(body: dict):
-        ds = get_dataset(body["dataset"])
-        rows = ds.rows(body["episode"])
-        feature = body["feature"]
-        dimension = body["dimension"]
-        names = ds.info["features"][feature].get("names", [])
-        if feature not in ["action", "observation.state"] or not 0 <= dimension < len(
-            names
-        ):
-            raise ValueError("请选择具名反馈/命令通道")
-        candidates = event_candidates(rows, feature, dimension, body["calibration"])
-        source, _, _ = ds.source_key(body["episode"], 0, body["dataset"])
-        with store.transaction("生成事件候选"):
-            for r in candidates:
-                _, sf, _ = ds.source_key(body["episode"], r["frame"], body["dataset"])
-                store.db.execute(
-                    "INSERT INTO events(source,frame,arm,type,status,details) VALUES(?,?,?,?,?,?)",
-                    (
-                        source,
-                        sf,
-                        body["arm"],
-                        r["type"],
-                        "suggestion",
-                        json.dumps(r["details"]),
-                    ),
-                )
-            store.set("event_calibration", body)
-        return {"candidates": candidates}
+        # Compatibility: older clients still generate immediately; new UI previews first.
+        with store.lock:
+            result = event_preview(body, legacy=True)
+            saved = save_events(store, result)
+            return {"candidates": result["candidates"], **saved}
 
-    @app.post("/api/adviser/suggest")
-    def suggest_adviser(body: dict):
-        if store.schema().get("semantic_profile", "dse_v1") != "dse_v1":
-            raise ValueError(
-                "通用方案不使用固定阶段的 adviser 建议，请按自定义规则人工标注"
-            )
-        ds = get_dataset(body["dataset"])
-        rows = ds.rows(body["episode"])
-        source, sf, _ = ds.source_key(body["episode"], body["frame"], body["dataset"])
-        offset = sf - body["frame"]
-        arm = body["arm"]
-
-        def approved(i):
-            return (
-                store.db.execute(
-                    "SELECT 1 FROM reviews WHERE source=? AND start<=? AND end>? AND status='approved'",
-                    (source, i + offset, i + offset),
-                ).fetchone()
-                is not None
-            )
-
-        def phase(i):
-            return store.raw(source, i + offset)[arm].get("phase", {}).get("value_id")
-
-        event_frames = {
-            r["frame"] - offset
-            for r in store.db.execute(
-                "SELECT frame FROM events WHERE source=?", (source,)
-            )
-        }
-        config = body["calibration"]
-        config["feature"] = "observation.ee_pose_" + arm
-        return adviser_candidate(
-            rows, body["frame"], approved, phase, event_frames, config
-        )
+    install_adviser_routes(app, store, get_dataset, bounds)
 
     @app.post("/api/export")
     def export(body: ExportRequest):

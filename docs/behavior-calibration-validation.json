@@ -1,0 +1,88 @@
+{
+  "adviser": {
+    "summary": {
+      "frames": 50,
+      "candidates": 192,
+      "savable": 192,
+      "skipped": 8,
+      "reasons": {
+        "window_too_short": 8
+      }
+    },
+    "applied": {
+      "saved": 192,
+      "skipped": 8,
+      "failed": 0,
+      "revision": 3
+    }
+  },
+  "adviser_undo": true,
+  "event_delete_undo": true,
+  "events": {
+    "preview": {
+      "candidates": 1,
+      "savable": 1,
+      "duplicates": 0
+    },
+    "repeated": {
+      "candidates": 1,
+      "savable": 0,
+      "duplicates": 1
+    }
+  },
+  "ui_export_protocol": true,
+  "english": true,
+  "viewports": [
+    {
+      "left": 0,
+      "right": 1440,
+      "width": 1440,
+      "scroll": 1440
+    },
+    {
+      "left": 0,
+      "right": 960,
+      "width": 960,
+      "scroll": 960
+    },
+    {
+      "left": 0,
+      "right": 390,
+      "width": 390,
+      "scroll": 390
+    }
+  ],
+  "errors": [],
+  "date": "2026-11-17",
+  "data": "Isolated synthetic fixture only; no real annotation workspaces changed.",
+  "python_tests": {
+    "passed": 139,
+    "runner": "Temporary /tmp asyncio heartbeat launcher; production code unchanged."
+  },
+  "frontend_checks": [
+    "TypeScript/Vite production build",
+    "959-message bilingual catalog",
+    "schema preview",
+    "key class selection",
+    "behavior calibration state and callback regression"
+  ],
+  "static_checks": [
+    "Ruff changed Python modules/tests",
+    "git diff --check"
+  ],
+  "known_limits": {
+    "adviser_max_target_frames": 5000,
+    "adviser_plan_ttl_seconds": 900,
+    "adviser_plan_cache_entries": 8,
+    "position_unit": "m",
+    "feedback_layout": [
+      "x",
+      "y",
+      "z",
+      "qx",
+      "qy",
+      "qz",
+      "qw"
+    ]
+  }
+}

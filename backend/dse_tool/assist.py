@@ -20,6 +20,15 @@ def event_candidates(rows, feature, dimension, config):
     ):
         raise ValueError("先核对单位、开闭方向、双阈值滞回与持续时间")
     close, opened = config["closed_threshold"], config["open_threshold"]
+    if (
+        type(config["closed_below"]) is not bool
+        or any(
+            type(v) not in (int, float) or not math.isfinite(v)
+            for v in [close, opened, config["min_duration"]]
+        )
+        or config["min_duration"] < 0
+    ):
+        raise ValueError("阈值和持续时间必须为有效数值，持续时间不能为负")
     if (config["closed_below"] and close >= opened) or (
         not config["closed_below"] and close <= opened
     ):
@@ -29,7 +38,25 @@ def event_candidates(rows, feature, dimension, config):
     pending = None
     since = 0
     for i, row in enumerate(rows):
-        x = row[feature][dimension]
+        raw = row.get(feature)
+        try:
+            x = (
+                raw[dimension]
+                if isinstance(raw, (list, tuple))
+                else raw
+                if dimension == 0
+                else None
+            )
+            x = float(x)
+            timestamp = float(row["timestamp"])
+        except (ValueError, TypeError, IndexError, KeyError) as exc:
+            raise ValueError("事件通道缺失或维度无效") from exc
+        if (
+            not math.isfinite(x)
+            or not math.isfinite(timestamp)
+            or (i and timestamp <= float(rows[i - 1]["timestamp"]))
+        ):
+            raise ValueError("事件通道和时间戳须有限，时间戳须严格递增")
         candidate = (
             ("closed" if x <= close else "open" if x >= opened else None)
             if config["closed_below"]
@@ -42,7 +69,7 @@ def event_candidates(rows, feature, dimension, config):
             pending = candidate
             since = i
         if (
-            row["timestamp"] - rows[since]["timestamp"] >= config["min_duration"]
+            row["timestamp"] - rows[since]["timestamp"] + 1e-8 >= config["min_duration"]
             and candidate != stable
         ):
             if stable is not None:

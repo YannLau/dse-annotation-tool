@@ -2,7 +2,7 @@
 
 English | [简体中文](ANNOTATED_DATASET_MANUAL_ZH.md)
 
-Date: 2026-11-03; interface language updated on 2026-11-08; variable state dimensions, named scalars, and model APIs updated for 0.2.0 on 2026-11-10. Covers the `LeRobot-v2.1+DSE-1` export format of this `dse_annotation_tool` project; the original export-protocol baseline checked was `9b1246f`. Actual exported files were also checked. This manual describes the current implementation. Later model, training, and protocol ideas in research documents are not automatically implemented features.
+Date: 2026-11-03; interface language updated on 2026-11-08; variable state dimensions, named scalars, and model APIs updated for 0.2.0 on 2026-11-10; behavior/calibration, custom adviser, and protocol attachments updated on 2026-11-17. Covers the `LeRobot-v2.1+DSE-1` export format of this `dse_annotation_tool` project; the original export-protocol baseline checked was `9b1246f`. Actual exported files were also checked. This manual describes the current implementation. Later model, training, and protocol ideas in research documents are not automatically implemented features.
 
 This manual is for annotators, recipients of exported data, and developers building DSE or VLA training programs. It explains what is added to the directory, what each field means, which labels can supervise training, which data is context only, and what training code must still handle.
 
@@ -99,6 +99,7 @@ export_dataset/
     ├── samples.parquet
     ├── source_map.parquet
     ├── intervals.parquet
+    ├── behavior_protocol.json
     ├── manifest.json
     └── validation_report.json
 ```
@@ -217,9 +218,9 @@ Directions use the verified canonical robot-base frame: `+X` forward, `+Y` to th
 
 **adviser describes one short-term adjustment used by a qualified demonstration, not the uniquely correct action for the state or a precise action magnitude.** `none/keep` only means no significant motion in that component; it does not imply alignment, no need to move another axis, permission to close/release, or a requirement for the whole action chunk to remain still.
 
-Automatic candidates require verified metric units, a rigid transform to the canonical base frame, and action-quality review. A continuous approved prefix starts at the current frame, extends at most 0.25 seconds, and stops at a phase change or event boundary. Less than 0.1 seconds produces no candidate. Significant out-and-back translation/rotation that cancels net change makes affected components unknown rather than inventing a definite direction from endpoints. The current rule version is `approved-displacement-2`.
+Automatic candidates support dse_v1 and generic schemes. Existing adviser targets must be categorical, each_arm, behavior fields. Applicability is evaluated per field from the published schema and saved labels; generic does not require phase. Semantic results map to each field's stable IDs and unknown_id, so the numbers above describe only the original defaults. First verify metric units and this arm's rigid base transform, and approve the action range in Demonstration-action quality. A continuous approved prefix starts at t, spans 0.1–0.25 seconds, and stops on changed gates/dependency values, a confirmed same-arm event, or discontinuous data. Reversal/cancellation maps affected components to unknown. Current-frame/selection modes compute every target separately; evidence may extend beyond the selection by at most 0.25 seconds while saved drafts remain inside it. See the [operation guide](BEHAVIOR_CALIBRATION_2026-11-17_EN.md). Old candidates may retain historical rule versions such as approved-displacement-2.
 
-Accepting an automatic suggestion still produces a draft. Human label review and marking an action segment approved are separate steps. Manual adviser labels do not automatically receive the same complete coordinate configuration and window provenance as generated candidates; data recipients must verify their evidence separately.
+Accepting a suggestion fills only truly absent entries and produces drafts; it preserves human values, unknowns, reviewed/needs-review records, and explicit single-frame missing overrides. Human label review and marking demonstration actions approved are separate steps. Manual adviser labels do not automatically receive the same complete coordinate configuration and window provenance as generated candidates; data recipients must verify their evidence separately.
 
 ### 5.6 Default Phase-Dependent Fields
 
@@ -453,10 +454,12 @@ In particular, the mask formula **does not additionally require** an approved ac
 | `start`, `end`, `duration` | Automatic adviser candidate | Window coordinates in the input dataset used when generating it, exclusive end, and actual duration in seconds |
 | `needs_review` | Automatic adviser candidate | Whether reversal ambiguity or another issue was detected; false still means only a candidate |
 | `rule_version` | Rule candidate | Version of the generating rule |
-| `coordinate_config` | Automatic adviser candidate | Coordinate, unit, transform, noise, and measured end-effector feature configuration at generation |
+| `coordinate_config` / `calibration` | Old/new automatic adviser candidate | Coordinate, unit, transform, noise, and measured end-effector feature configuration at generation |
+| `window`, `gate_dependencies`, `mapping` | New automatic adviser candidate | Actual input/source-frame window, gate dependency values, and semantic-role to stable-ID mapping |
+| `approved_basis`, `cutoff_reason` | New automatic adviser candidate | Approved-action evidence and window cutoff reason |
 | `test_fixture`, `description`, etc. | Some test/custom records | Additional caller/test notes, not evidence of real human annotation |
 
-Common `coordinate_config` keys:
+Common keys in old coordinate_config and new calibration records follow. New calibration also binds the dataset, arm, and feedback feature; candidates bind schema and revision fingerprints:
 
 | Key | Meaning |
 |---|---|
@@ -650,7 +653,7 @@ Per-frame labels are computed from these records and the current schema. Classif
 
 These start/end coordinates refer to the direct input and can differ from annotations/reviews' original-source coordinates. Re-import restores selections from the current exported center flags in samples; do not apply old selections' numbers directly to new episodes.
 
-### 11.4 table=reviews Payload: Action Quality
+### 11.4 table=reviews Payload: Demonstration-Action Quality
 
 | Key | Meaning |
 |---|---|
@@ -662,7 +665,7 @@ These start/end coordinates refer to the direct input and can differ from annota
 
 **This review asks whether demonstration actions are suitable imitation targets; labels.review_status asks whether a semantic answer was reviewed.** Neither substitutes for the other.
 
-An absent reviews record does not mean approved. Rejected status does not delete action values, rewrite videos, or automatically invalidate DSE state labels: failure footage can still teach not_ready or recover. The current adapter does not generate BC action-chunk eligibility masks. VLA training must consume these reviews separately.
+The UI calls this Demonstration-action quality, for later VLA filtering and automatic adviser candidates. It applies to the explicit current selection, not the whole episode. An absent reviews record does not mean approved. Rejected status does not delete action values, rewrite videos, or automatically invalidate DSE state labels: failure footage can still teach not_ready or recover. The current adapter does not generate BC action-chunk eligibility masks. VLA training must consume these reviews separately.
 
 ### 11.5 table=events Payload
 
@@ -673,15 +676,16 @@ An absent reviews record does not mean approved. Rejected status does not delete
 | `frame` | Original source-frame index |
 | `arm` | Arm associated with the event |
 | `type` | Event type; rule candidates commonly use `open` / `closed`; inspect records for manual types |
-| `status` | Commonly suggestion / confirmed; unconfirmed candidates are not verified events |
+| `status` | suggestion / confirmed / rejected; unconfirmed candidates are not verified events; deletion removes the record |
 | `details` | JSON string containing source and candidate-generation settings |
 
 Manual event details commonly contain `{"source":"human"}`. Rule event details may contain:
 
 | Key | Meaning |
 |---|---|
-| `feature` | Measured `observation.state` or commanded `action` channel |
-| `dimension` | Channel index in the vector, interpreted through info.features names |
+| `feature` | Actual named numeric feature, either a vector dimension or an independent scalar |
+| `dimension` | Vector index, or 0 for an independent scalar; interpret through info.features.names |
+| `role`, `channel_name`, `scan_range` | Feedback/command classification, named channel, and requested candidate range |
 | `rule_version` | Current hysteresis rule: `hysteresis-1` |
 | `calibration.verified` | User confirmation of units, direction, and threshold settings |
 | `calibration.unit` | Channel units |
@@ -691,7 +695,7 @@ Manual event details commonly contain `{"source":"human"}`. Rule event details m
 
 Hysteresis uses different opening/closing thresholds to avoid repeated transitions around a single threshold. A command-channel closed event cannot automatically be interpreted as measured closure, holding, or ready.
 
-Confirmed events drive the key sampling pool and event grouping. Automatic adviser currently reads saved source events for window boundaries, so unconfirmed candidates may also truncate its window. Review/clean up candidates; do not assume every use filters to confirmed only.
+Confirmed events drive key sampling and event grouping in roughly ±0.25-second neighborhoods. The new adviser uses only confirmed events for the same arm as window boundaries; suggestions, rejected events, and other-arm events do not truncate it. Event management supports confirm, reject, delete, move, and undo. Repeated candidate generation deduplicates the same source/arm/channel/frame/type without overwriting rejected records. Preview an explicit scope before acceptance; selection previews read preceding signal rows to initialize state but return/save only in-range events. Units are recorded in details.calibration.unit without converting source values.
 
 ## 12. manifest.json: Export Delivery Manifest
 
@@ -699,7 +703,7 @@ Confirmed events drive the key sampling pool and event grouping. Automatic advis
 
 | Key | Meaning and use |
 |---|---|
-| `tool_version` | Declared tool version, currently 0.1.0; also check code revision and manifest content rather than inferring every feature from this value |
+| `tool_version` | Exporting package version, currently 0.2.0; also check the actual Git revision and manifest content rather than inferring every feature from this value |
 | `format` | Current format: `LeRobot-v2.1+DSE-1` |
 | `schema_version` | Current active rule version |
 | `schema_hash` | SHA-256 of normalized current schema content |
@@ -710,6 +714,7 @@ Confirmed events drive the key sampling pool and event grouping. Automatic advis
 | `history_sampling` | Default model-history sampling configuration |
 | `selections` | Training-center ranges in input-dataset coordinates, including id/dataset/episode/start/end |
 | `sampling` | Sampling-pool ratio and group-balancing policy |
+| `behavior_protocol` | Path and SHA-256 of the frozen task-reference/auxiliary-settings attachment |
 | `encoding` | Video re-encoding parameters |
 | `checksums` | Map of relative file paths to SHA-256 |
 | `source_roots_required` | false means the original directory path is unnecessary for reading; it does not recover absent history or verify calibration |
@@ -846,9 +851,9 @@ For the project's sample, internal fields of `features[feature_name]` mean:
 | `tasks.jsonl` | `task_index`, `task` | Task ID and text, e.g. `Put the banana on the plate.` |
 | `episodes.jsonl` | `episode_index`, `length`, `tasks` | New episode ID, retained frame count, and task-text list |
 
-Original task text is preserved. **Target grasp part, receiving region, W, and calibration notes entered under 任务与几何参考 (Task and geometry reference) stay in work-project preferences. Export does not automatically put them in tasks.jsonl or create a complete task-protocol file.** Supply a separately versioned task/calibration protocol with training data; the directory does not contain every verbal agreement.
+Original task text is preserved. Target part, receiving region, W, calibration notes, and scheme-specific auxiliary settings are frozen into **annotations/behavior_protocol.json**. manifest.behavior_protocol records path and sha256. The attachment includes a version, scheme identity, schema/source fingerprints, dataset-scoped task_settings, behavior_settings (only this dataset and per-arm profiles), legacy_task_notes, legacy_coordinate, and event_calibration. Explicit annotation restoration restores these settings; loading sources alone does not. Restored event/pose calibration clears verified and its old binding and must be reverified for the new input dataset. This does not rewrite tasks.jsonl or infer physical geometry from text. Missing calibration procedures or business agreements must still be delivered separately.
 
-Automatic event details and accepted adviser-candidate provenance can retain their respective configurations. This does not mean every manual label automatically carries a complete task protocol.
+Automatic-event configuration remains in details and accepted adviser configuration in provenance. behavior_protocol is a frozen configuration snapshot, not proof of physical calibration, and does not upgrade manual labels to having complete evidence.
 
 ### 14.5 episodes_stats.jsonl and stats.json
 
@@ -1035,7 +1040,7 @@ The tool does not generate `bc_action_mask`, `corrected_rollout_id`, expert-corr
 
 Alongside the full dataset, save actual train/validation/test source groups, code revision, schema/hash, class_ids, H/T, modality switches, camera order, preprocessing, canonical-coordinate settings, normalization statistics, sampling configuration, and task protocol. Named reviewer and per-review timestamp fields are not implemented; revision is not reviewer identification.
 
-Some of these records are in export attachments; others need separate management. Target/receiving-region/W/calibration notes stored in UI preferences do not have a complete standalone exported protocol file.
+Some records are in export attachments; others need separate management. behavior_protocol.json freezes target/receiving-region/W/calibration notes and auxiliary settings. Calibration procedures, full task agreements, and experiment splits that were never entered still need separate archiving.
 
 Formal training must also exclude explicit `test_fixture` and synthetic-demo sources. A fixture can have mask=1 to test rules; the mask does not determine whether data was actually collected on a robot.
 
@@ -1183,7 +1188,7 @@ Paths below are relative to this manual in docs:
 | [history.py](../backend/dse_tool/history.py) | H/T and at_or_before sampling |
 | [dataset.py](../backend/dse_tool/dataset.py) | Content identity, media mapping, history loading, and source inheritance |
 | [adapter.py](../backend/dse_tool/adapter.py) | Actual batches, category encoding, D+18 conversion/legacy 36D interface, and statistics boundaries |
-| [assist.py](../backend/dse_tool/assist.py), [review.py](../backend/dse_tool/review.py) | Event/adviser candidates, review semantics, and evidence settings |
+| [assist.py](../backend/dse_tool/assist.py), [events.py](../backend/dse_tool/events.py), [adviser.py](../backend/dse_tool/adviser.py), [review.py](../backend/dse_tool/review.py) | Channel/event previews, schema-gated adviser, atomic acceptance, and independent review |
 | [default.json](../schemas/default.json) | Default dictionary and Chinese semantic instructions |
 | [main.tsx](../frontend/src/main.tsx) | UI settings, project preferences, and evidence saved when accepting candidates |
 | [Training specification (Chinese)](../../NOTES-Yann/innovation_research_handoff/DSE_OUTPUT_MODEL_TRAINING_SPEC_V1_2026-10-29.md) | Label semantics, causal input, and training/model implementation boundaries |

@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "test:i18n": "node ../scripts/test_i18n.mjs",
     "test:schema-preview": "node ../scripts/test_schema_preview.mjs",
-    "test:key-classes": "node ../scripts/test_key_classes.mjs"
+    "test:key-classes": "node ../scripts/test_key_classes.mjs",
+    "test:behavior-calibration": "node ../scripts/test_behavior_calibration.mjs"
   },
   "dependencies": {
     "react": "19.1.0",

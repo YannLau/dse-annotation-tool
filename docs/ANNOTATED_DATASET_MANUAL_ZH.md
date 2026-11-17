@@ -2,7 +2,7 @@
 
 [English](ANNOTATED_DATASET_MANUAL_EN.md) | 简体中文
 
-日期：2026-11-03；2026-11-08 更新界面语言；2026-11-10更新0.2.0的可变状态维数、具名标量及模型接口。适用于当前项目 `dse_annotation_tool` 的 `LeRobot-v2.1+DSE-1` 导出格式；导出协议初次核对代码基线为 `9b1246f`。本文同时核对了实际导出文件，描述当前实现。研究文档中的后续模型、训练与协议设想，不自动等于已经实现的功能。
+日期：2026-11-03；2026-11-08 更新界面语言；2026-11-10更新0.2.0的可变状态维数、具名标量及模型接口；2026-11-17更新行为与校准、自定义 adviser 及协议附件。适用于当前项目 `dse_annotation_tool` 的 `LeRobot-v2.1+DSE-1` 导出格式；导出协议初次核对代码基线为 `9b1246f`。本文同时核对了实际导出文件，描述当前实现。研究文档中的后续模型、训练与协议设想，不自动等于已经实现的功能。
 
 本文面向三类读者：负责标注的人、接收导出数据的人、编写 DSE 或 VLA 训练程序的人。阅读后应能回答：目录里多了什么、每个字段是什么意思、哪些标签能训练、哪些数据只能用作上下文，以及训练端还必须做哪些处理。
 
@@ -99,6 +99,7 @@ export_dataset/
     ├── samples.parquet
     ├── source_map.parquet
     ├── intervals.parquet
+    ├── behavior_protocol.json
     ├── manifest.json
     └── validation_report.json
 ```
@@ -217,9 +218,9 @@ export_dataset/
 
 **adviser 表示合格示教采用的一种短期调整方式，不能解释成当前状态唯一正确的动作，也不表示精确动作幅度。** `none/keep` 只表示该分量没有显著运动，不表示已经对准、不需要其他轴移动、应该闭合、应该松开或整个动作块必须静止。
 
-自动候选需核实米制单位、基座系刚体变换和动作质量审核；从当前开始寻找连续 approved 前缀，最多 0.25 秒，遇到阶段变化或事件边界停止，不足 0.1 秒不给候选。显著往返平移或旋转导致净变化抵消时，受影响分量输出 unknown，而不是凭首末差编一个确定方向。当前规则版本是 `approved-displacement-2`。
+自动候选同时支持 dse_v1 和 generic：实际存在的 adviser 字段须为 categorical、each_arm、behavior，由当前已发布规则和已保存标签逐字段计算适用条件，不要求 generic 含 phase。类别通过语义映射为当前字段的稳定 ID，unknown 使用各字段自己的 unknown_id；上表数字仅为原始默认方案。需先核实米制单位、当前臂基座系刚体变换，并在“示教动作质量”中审核动作；从 t 开始取连续 approved 前缀，最长 0.25 秒、至少 0.1 秒，遇门控/依赖值变化、同臂 confirmed 事件或数据断裂停止。显著往返平移或旋转导致抵消时，受影响分量输出 unknown。当前帧/选区模式分别计算每个目标帧，未来证据可越过选区末端但不超过 0.25 秒，只保存范围内草稿；详见 [完整操作说明](BEHAVIOR_CALIBRATION_2026-11-17.md)。旧候选可能保留 approved-displacement-2 等历史规则版本。
 
-自动建议被接受后仍是草稿；人工审核与“动作片段 approved”是另外两步。手动 adviser 不会自动获得与候选相同完整的坐标配置和窗口 provenance，接收数据时要单独核实证据。
+自动建议被接受后仍是草稿，接受只补真正缺失项，不覆盖现有人工值、unknown、已审/需复核记录或显式单帧 missing；人工标签审核与“示教动作质量 approved”是另外两步。手动 adviser 不会自动获得与候选相同完整的坐标配置和窗口 provenance，接收数据时要单独核实证据。
 
 ### 5.6 默认阶段与字段开关
 
@@ -453,10 +454,12 @@ AND 标签 schema_version == 当前 schema.version
 | `start`、`end`、`duration`       | 自动 adviser 候选       | 候选生成时所在输入数据集的窗口帧坐标、半开末端和实际持续秒数 |
 | `needs_review`                   | 自动 adviser 候选       | 是否检测到需人工处理的往返歧义等；false 也仍是候选           |
 | `rule_version`                   | 规则候选                | 生成候选使用的规则版本                                       |
-| `coordinate_config`              | 自动 adviser 候选       | 当时的坐标、单位、变换、噪声及实测末端字段配置               |
+| `coordinate_config` / `calibration` | 旧/新版自动 adviser 候选 | 当时的坐标、单位、变换、噪声及实测末端字段配置 |
+| `window`、`gate_dependencies`、`mapping` | 新版自动 adviser 候选 | 实际输入/源帧窗口、门控依赖值和语义到稳定类别 ID 的映射 |
+| `approved_basis`、`cutoff_reason` | 新版自动 adviser 候选 | 认可动作的依据与窗口截断原因 |
 | `test_fixture`、`description` 等 | 某些测试/自定义记录     | 测试或调用方附加说明，不能当作真实人工标签                   |
 
-`coordinate_config` 中当前常见键如下：
+旧版 `coordinate_config` 与新版 `calibration` 中常见键如下；新版标定还绑定数据集、手臂和反馈字段，候选同时绑定 schema 和修订指纹：
 
 | 键               | 含义                                                                                 |
 | ---------------- | ------------------------------------------------------------------------------------ |
@@ -650,7 +653,7 @@ source_*                 parent_*                 当前 episode/frame/index
 
 这里的 start/end 是直接输入坐标，与 annotations/reviews 的原始源帧坐标可能不同。重新导入时，工具会根据 samples 中当前导出的中心标记恢复新数据集选区，不能把这些旧 selections 数字直接套用到新 episode。
 
-### 11.4 table=reviews 的 payload：动作质量审核
+### 11.4 table=reviews 的 payload：示教动作质量审核
 
 | 键             | 含义                                                   |
 | -------------- | ------------------------------------------------------ |
@@ -662,7 +665,7 @@ source_*                 parent_*                 当前 episode/frame/index
 
 大白话解释：**这张审核单问的是“示教动作适不适合当模仿对象”，而 labels.review_status 问的是“这个语义答案有没有审过”。** 二者不能互相代替。
 
-没有 reviews 记录的范围不能默认为 approved。标了 rejected 也不会删除原始 action、改写视频或自动让 DSE 状态标签失效：失败画面仍然能教 DSE 识别 not_ready、recover 等。当前适配器不生成 BC 动作块资格 mask，VLA 训练需要自行消费这里的审核记录。
+界面名称为“示教动作质量”，注明“用于后续 VLA 筛选及自动 adviser 候选”；本次保存范围是当前明确选区，不是整个 episode。没有 reviews 记录的范围不能默认为 approved。标了 rejected 也不会删除原始 action、改写视频或自动让 DSE 状态标签失效：失败画面仍然能教 DSE 识别 not_ready、recover 等。当前适配器不生成 BC 动作块资格 mask，VLA 训练需要自行消费这里的审核记录。
 
 ### 11.5 table=events 的 payload
 
@@ -673,15 +676,16 @@ source_*                 parent_*                 当前 episode/frame/index
 | `frame`   | 原始源帧号                                                   |
 | `arm`     | 事件针对的手臂                                               |
 | `type`    | 事件类型；规则候选常为 `open` / `closed`，手动类型见实际记录 |
-| `status`  | 常见 suggestion / confirmed；确认前不是已核实事件            |
+| `status`  | suggestion / confirmed / rejected；确认前不是已核实事件；删除会移除记录 |
 | `details` | JSON 字符串，保存来源和候选生成配置                          |
 
 手动事件的 details 常为 `{"source":"human"}`。规则事件的 details 可能包含：
 
 | 键                                                | 含义                                                      |
 | ------------------------------------------------- | --------------------------------------------------------- |
-| `feature`                                         | 使用 `observation.state` 实测通道，还是 `action` 命令通道 |
-| `dimension`                                       | 该向量的通道下标；需结合 info.features 的 names 解释      |
+| `feature`                                         | 实际使用的具名数值特征；可为向量的一维或独立标量 |
+| `dimension`                                       | 向量维度下标或独立标量的 0；结合 info.features.names 解释 |
+| `role`、`channel_name`、`scan_range` | 反馈/命令属性、具名通道及本次候选目标范围 |
 | `rule_version`                                    | 当前滞回事件规则为 `hysteresis-1`                         |
 | `calibration.verified`                            | 使用者是否确认过单位、方向和阈值配置                      |
 | `calibration.unit`                                | 通道单位说明                                              |
@@ -691,7 +695,7 @@ source_*                 parent_*                 当前 episode/frame/index
 
 “滞回”就是开与关用不同阈值，避免读数在一个临界值两边抖动，反复产生事件。命令通道生成的“闭合”不能自动视作实测已闭合，更不能直接当 holding 或 ready。
 
-confirmed 事件用于关键采样池及事件分组；当前自动 adviser 在事件边界截断时会读取该来源的已保存事件，未确认候选也可能影响截断。应清理/复核候选，不能假定所有用途都只看 confirmed。
+confirmed 事件用于关键采样池及事件分组，附近范围当前约 ±0.25 秒。新版 adviser 只读取同一手臂的 confirmed 事件作为截断边界；未确认候选、rejected 和其他臂事件不截断。事件管理支持确认、拒绝、删除与移动，修改可撤销；相同来源/手臂/通道/帧/类型的候选重复生成不会追加重复记录，也不覆盖已拒绝事件。候选需先预览明确范围再接受；若仅选当前选区，程序读取前面的曲线用于初始化，但只返回/保存选区内事件。单位只记录在 details.calibration.unit，不转换原始数值。
 
 ## 12. manifest.json：这次导出的交付清单
 
@@ -699,7 +703,7 @@ confirmed 事件用于关键采样池及事件分组；当前自动 adviser 在�
 
 | 键                            | 含义与使用方式                                                                           |
 | ----------------------------- | ---------------------------------------------------------------------------------------- |
-| `tool_version`                | 导出工具声明版本，当前为 0.1.0；细节仍应结合代码版本和清单内容，不能只凭此值推断所有功能 |
+| `tool_version`                | 导出工具包版本，当前为 0.2.0；还应结合实际 Git 提交和清单内容，不能只凭此值推断所有功能 |
 | `format`                      | 当前格式 `LeRobot-v2.1+DSE-1`                                                            |
 | `schema_version`              | 当前活动规则版本                                                                         |
 | `schema_hash`                 | 当前 schema 的规范化内容 SHA-256                                                         |
@@ -710,6 +714,7 @@ confirmed 事件用于关键采样池及事件分组；当前自动 adviser 在�
 | `history_sampling`            | 这份导出默认的历史取样配置                                                               |
 | `selections`                  | 本次输入数据集坐标下的训练中心选区列表，含 id/dataset/episode/start/end                  |
 | `sampling`                    | 采样池比例和组均衡策略声明                                                               |
+| `behavior_protocol`           | 任务参考及辅助配置冻结附件的路径和 SHA-256 |
 | `encoding`                    | 视频重编码参数                                                                           |
 | `checksums`                   | `相对文件路径 → SHA-256` 的校验字典                                                      |
 | `source_roots_required`       | false 表示读取这份导出无需保留原始目录路径；不意味着缺失历史可恢复或标定已验证           |
@@ -846,9 +851,9 @@ features 内的 `names` 用来解释向量各维；相机项的 `shape` 是高/�
 | `tasks.jsonl`    | `task_index`、`task`               | 任务编号和文本；例如 `Put the banana on the plate.` |
 | `episodes.jsonl` | `episode_index`、`length`、`tasks` | 新 episode 编号、实际保留帧数、其中任务文本列表     |
 
-tasks 中的原任务文本会保留。**当前界面“任务与几何参考”填写的目标抓取部位、承接区域、W 和标定说明，保存在工作项目偏好中，导出器不会自动把它们写入 tasks.jsonl 或另建完整任务协议文件。** 接收训练数据时，应另外交付经版本管理的任务/标定协议，不能以为目录已包含全部口头约定。
+tasks 中的原任务文本会保留。“任务与几何参考”填写的目标部位、承接区域、W 和标定说明，以及当前方案的辅助配置，会冻结保存到 **annotations/behavior_protocol.json**；manifest.behavior_protocol 记录 path 与 sha256。该附件包含版本、方案身份、schema/source 指纹、当前数据集的 task_settings、behavior_settings（仅当前数据集配置/分臂 profiles）、legacy_task_notes、legacy_coordinate 和 event_calibration。显式恢复导出标注时才恢复这些配置，单纯加载来源不恢复；恢复的事件/位姿标定会清除 verified 和旧 binding，需要针对新输入数据重新核实。不会改写 tasks.jsonl，也不从文字说明推导几何真值；未填写的标定协议或业务约定仍需另外交付。
 
-自动事件的配置可在 details 中找到，接受的 adviser 候选可在 provenance 中找到坐标配置；这不等于所有手动标签都自动携带完整任务协议。
+自动事件的配置仍在 details，接受的 adviser 候选仍在 provenance；behavior_protocol 是本次导出的配置快照，不证明物理标定已经正确，也不把所有手动标签升级为具备完整证据。
 
 ### 14.5 episodes_stats.jsonl、stats.json
 
@@ -1035,7 +1040,7 @@ DSE 前向不应包含 action、ee_pose_cmd、未来图、未来末端、人工 
 
 除完整数据集外，训练项目应保存实际 train/validation/test 来源组、代码版本、schema/hash、class_ids、H/T、模态开关、相机顺序、预处理、规范坐标配置、归一化统计、采样配置和任务协议。当前工具尚未实现具名 reviewer 与逐条审核时间字段，不能把 revision 当作审核员身份证明。
 
-这些项中，部分已在导出附件，部分仍需单独管理；特别是界面偏好里的目标/承接区域/W/标定备注，没有完整独立导出协议文件。
+这些项中，部分已在导出附件，部分仍需单独管理。behavior_protocol.json 保存目标/承接区域/W/标定备注与辅助设置的冻结快照；未录入的标定过程、完整任务协议和实验划分仍需另行归档。
 
 正式训练还应排除明确的 `test_fixture` 和合成演示来源。测试夹具可以为了验证规则而具有 mask=1；mask 不负责判断数据是不是实际机器人采集。
 
@@ -1183,7 +1188,7 @@ for row in intervals:
 | [history.py](../backend/dse_tool/history.py)                                                                       | H/T 和 at_or_before 采样                                |
 | [dataset.py](../backend/dse_tool/dataset.py)                                                                       | 内容身份、媒体映射、历史读取与来源继承                  |
 | [adapter.py](../backend/dse_tool/adapter.py)                                                                       | 实际训练 batch、标签编码、36D 转换及训练统计边界        |
-| [assist.py](../backend/dse_tool/assist.py)、[review.py](../backend/dse_tool/review.py)                             | 事件/adviser 候选、审核语义与证据配置                   |
+| [assist.py](../backend/dse_tool/assist.py)、[events.py](../backend/dse_tool/events.py)、[adviser.py](../backend/dse_tool/adviser.py)、[review.py](../backend/dse_tool/review.py) | 通道/事件预览、schema 门控 adviser、事务接受与独立审核 |
 | [default.json](../schemas/default.json)                                                                            | 默认标签字典和中文语义说明                              |
 | [main.tsx](../frontend/src/main.tsx)                                                                               | 界面设置、工作项目偏好、候选接受时保存的证据            |
 | [训练规范](../../NOTES-Yann/innovation_research_handoff/DSE_OUTPUT_MODEL_TRAINING_SPEC_V1_2026-10-29.md)           | 标签语义、因果输入、训练/模型实现边界                   |

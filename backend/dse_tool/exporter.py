@@ -96,6 +96,32 @@ class Exporter:
                 raise ValueError("请先选择训练中心区间")
             frozen = self.store.snapshot()
             schema = self.store.schema()
+            preferences = copy.deepcopy(self.store.get("preferences", {}))
+            behavior = preferences.get("behaviorSettings", {})
+            protocol = {
+                "version": 1,
+                "annotation_scheme": self.store.get("scheme_info"),
+                "schema_hash": digest(schema),
+                "source_fingerprint": fingerprint,
+                "task_settings": behavior.get("datasets", {})
+                .get(fingerprint, {})
+                .get("taskSettings", {}),
+                "legacy_task_notes": preferences.get("taskSettings", {}),
+                "behavior_settings": {
+                    "profiles": {
+                        k: v
+                        for k, v in behavior.get("profiles", {}).items()
+                        if k.startswith(fingerprint + ":")
+                    },
+                    "datasets": {
+                        fingerprint: behavior.get("datasets", {}).get(fingerprint, {})
+                    },
+                },
+                "legacy_coordinate": preferences.get("coordinate", {}),
+                "event_calibration": self.store.get("event_calibration", {}),
+            }
+            if protocol["event_calibration"].get("dataset") != fingerprint:
+                protocol["event_calibration"] = {}
             if (
                 expected_schema_version is not None
                 and schema["version"] != expected_schema_version
@@ -117,6 +143,7 @@ class Exporter:
             "error": None,
             "annotation_scheme": self.store.get("scheme_info"),
             "sampling": sampling_metadata(policy),
+            "behavior_protocol": protocol,
         }
         cancel = threading.Event()
         self.cancels[job["id"]] = cancel
@@ -701,6 +728,7 @@ class Exporter:
             write_jsonl(temporary / "meta/episodes.jsonl", ep_meta)
             write_jsonl(temporary / "meta/episodes_stats.jsonl", ep_stats)
             ann = temporary / "annotations"
+            write_json(ann / "behavior_protocol.json", job.get("behavior_protocol", {}))
             write_json(ann / "schema.json", schema)
             write_json(ann / "schema_history.json", schema_history or [schema])
             write_json(ann / "head_spec.json", head_spec(schema))
@@ -754,6 +782,12 @@ class Exporter:
                     "schema_version": schema["version"],
                     "schema_hash": digest(schema),
                     "annotation_scheme": job.get("annotation_scheme"),
+                    "behavior_protocol": {
+                        "path": "annotations/behavior_protocol.json",
+                        "sha256": hashlib.sha256(
+                            (ann / "behavior_protocol.json").read_bytes()
+                        ).hexdigest(),
+                    },
                     "source_fingerprint": fingerprint,
                     "source_episode_uuids": sorted(carried_sources),
                     "source_dataset_fingerprints": sorted(
