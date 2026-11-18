@@ -2,7 +2,6 @@ import copy
 import json
 import shutil
 import threading
-import time
 import numpy as np
 import pyarrow.parquet as pq
 import pytest
@@ -12,7 +11,6 @@ from dse_tool.schema import (
     evaluate,
     validate_schema,
     resolve,
-    head_spec,
 )
 from dse_tool.store import Store
 from dse_tool.dataset import Dataset, content_fingerprint
@@ -257,6 +255,23 @@ def test_export_portable_and_batch(source, tmp_path):
     opened = c2.post("/api/import", json={"path": str(moved)})
     assert opened.status_code == 200, opened.text
     k2 = opened.json()["fingerprint"]
+    # Both segments share a source, so a selective refresh includes both.
+    summary = c2.get(f"/api/datasets/{k2}", params={"episode": 0}).json()
+    assert summary["episodes"] == opened.json()["episodes"]
+    assert summary["revision"] == app2.state.store.get("revision")
+    assert summary["schema_version"] == store.get("schema_version")
+
+    window_path = f"/api/window/{k2}/0/20"
+    full = c2.get(window_path, params={"mode": "behavior"}).json()
+    compact = c2.get(
+        window_path, params={"mode": "behavior", "track_details": False}
+    ).json()
+    full_tracks, compact_tracks = full.pop("tracks"), compact.pop("tracks")
+    track_columns = {"id", "arm", "field", "start", "end", "value", "status"}
+    assert full_tracks and compact_tracks == [
+        {name: row[name] for name in track_columns} for row in full_tracks
+    ]
+    assert compact == full
     newds = app2.state.datasets[k2]
     for sample in samples:
         source_uuid, sf, _ = newds.source_key(

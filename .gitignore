@@ -11,3 +11,5 @@ exports/
 .DS_Store
 datasets/
 reports/
+schemas/
+Insight*

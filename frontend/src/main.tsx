@@ -1293,6 +1293,9 @@ function App() {
   const playbackClock = useRef({ frame: 0, time: 0 }),
     requestVersion = useRef(0),
     choiceVersion = useRef(0),
+    episodeSummaryVersions = useRef(
+      new Map<number, { schema: number; revision: number }>(),
+    ),
     imageCache = useRef(new FrameImageCache()),
     pendingWrites = useRef(0),
     initial = useRef(false),
@@ -1487,6 +1490,7 @@ function App() {
   }
   async function choose(key: string, e = 0, f = 0, restoreHistory = false) {
     const version = ++choiceVersion.current;
+    episodeSummaryVersions.current.clear();
     try {
       setChoosing(true);
       setPlaying(false);
@@ -1652,7 +1656,7 @@ function App() {
     const timer = requestAnimationFrame(async () => {
       try {
         const v = await api(
-          `/window/${datasetKey}/${episode}/${frame}?mode=${mode}&request_id=${version}&future_horizon=${futureHorizon}&history_horizon=${historyConfig.horizon_seconds}&history_frames=${historyConfig.num_frames}`,
+          `/window/${datasetKey}/${episode}/${frame}?mode=${mode}&request_id=${version}&future_horizon=${futureHorizon}&history_horizon=${historyConfig.horizon_seconds}&history_frames=${historyConfig.num_frames}&track_details=false`,
           undefined,
           controller.signal,
         );
@@ -1753,7 +1757,49 @@ function App() {
     );
     return () => clearInterval(id);
   }, [job?.id, job?.status]);
-  async function mutate(path: string, body: any) {
+  async function refreshEpisodeSummaries(episodes: number[] = []) {
+    if (!datasetKey) return;
+    const choice = choiceVersion.current;
+    const query = new URLSearchParams();
+    for (const episodeIndex of new Set(episodes))
+      query.append("episode", String(episodeIndex));
+    try {
+      const result = await api(`/datasets/${datasetKey}?${query}`);
+      if (choice !== choiceVersion.current) return;
+      const version = {
+        schema: result.schema_version,
+        revision: result.revision,
+      };
+      const updates = new Map<number, Obj>();
+      for (const episode of result.episodes) {
+        const index = episode.episode_index;
+        const previous = episodeSummaryVersions.current.get(index);
+        if (
+          previous &&
+          (previous.schema > version.schema ||
+            (previous.schema === version.schema &&
+              previous.revision > version.revision))
+        )
+          continue;
+        episodeSummaryVersions.current.set(index, version);
+        updates.set(index, episode);
+      }
+      setDataset((current) =>
+        current && current.fingerprint === result.fingerprint
+          ? {
+              ...current,
+              episodes: current.episodes.map(
+                (episode: Obj) => updates.get(episode.episode_index) ?? episode,
+              ),
+            }
+          : current,
+      );
+    } catch (error) {
+      if (choice === choiceVersion.current) fail(error);
+    }
+  }
+  async function mutate(path: string, body: Obj) {
+    const choice = choiceVersion.current;
     setReviewReport(null);
     pendingWrites.current++;
     setBusy(true);
@@ -1761,10 +1807,16 @@ function App() {
     try {
       const r = await api(path, body);
       setRefresh((x) => x + 1);
-      if (datasetKey)
-        api("/datasets/" + datasetKey)
-          .then(setDataset)
-          .catch(fail);
+      if (choice === choiceVersion.current) {
+        const changes: Obj[] =
+          path === "/annotations/batch" ? body.changes : [body];
+        const episodes = changes.every(
+          (change) => change.dataset === datasetKey,
+        )
+          ? changes.map((change) => change.episode)
+          : [];
+        void refreshEpisodeSummaries(episodes);
+      }
       notify("已保存到 SQLite");
       return r;
     } catch (e) {
@@ -3460,10 +3512,7 @@ function App() {
           onPublish={() => {
             loadProject().then(() => {
               setRefresh((x) => x + 1);
-              if (datasetKey)
-                api("/datasets/" + datasetKey)
-                  .then(setDataset)
-                  .catch(fail);
+              void refreshEpisodeSummaries();
             });
           }}
         />

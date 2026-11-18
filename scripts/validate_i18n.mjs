@@ -408,9 +408,7 @@ try {
   report.completion_and_dynamic_backend_errors = true;
 
   await nav("Behavior & calibration").click();
-  await visible(
-    page.getByRole("heading", { name: "Calibration & assisted review" }),
-  );
+  await visible(page.getByRole("heading", { name: "Behavior & calibration" }));
   const target = page.getByLabel("Target grasp part", { exact: true });
   await target.fill("用户任务 / custom target");
   await changeLanguage("zh-CN");
@@ -420,7 +418,7 @@ try {
   );
   await changeLanguage("en");
   await visible(
-    page.getByRole("heading", { name: "adviser direction suggestions" }),
+    page.getByRole("heading", { name: "Adviser direction suggestions" }),
   );
   await nav("Export dataset").click();
   await visible(

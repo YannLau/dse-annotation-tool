@@ -3,6 +3,7 @@ import anyio
 import json
 import threading
 import logging
+from functools import cache
 from logging.handlers import RotatingFileHandler
 from numbers import Real
 import subprocess
@@ -32,8 +33,10 @@ from .events import channel_catalog, preview_events, save_events
 from .history import HistoryConfig
 from .sampling import default_key_classes
 from .inspector import ExportInspector, clean
+from .ranges import effective_ranges
 from .review import review_labels
 from .filesystem import directories, pick_directory
+from .storage import workspace_lock
 import uuid
 
 
@@ -254,6 +257,9 @@ def create_app(work_root):
             raise ValueError(f"需要半开帧区间 [start,end)，范围 0–{n}")
 
     def key_range(ds, episode, start, end, fingerprint):
+        if not ds.source_map:
+            source, _, _ = ds.source_key(episode, start, fingerprint)
+            return source, start, end
         keys = [ds.source_key(episode, i, fingerprint) for i in range(start, end)]
         if len({k[0] for k in keys}) != 1 or [k[1] for k in keys] != list(
             range(keys[0][1], keys[0][1] + len(keys))
@@ -270,53 +276,65 @@ def create_app(work_root):
             is not None
         )
 
-    def episode_summary(key, ds):
+    def episode_summary(key, ds, episode_indexes=None):
+        requested = set(episode_indexes or ())
+        lengths = {ep["episode_index"]: ep["length"] for ep in ds.episodes}
+        if requested - lengths.keys():
+            raise ValueError("数据集中不存在所选 episode")
+        # Two exported segments may share annotations on the same source episode.
+        shared_sources = (
+            {
+                ds.source_map[(episode, frame)]["source_episode_uuid"]
+                for episode in requested
+                for frame in range(lengths[episode])
+            }
+            if ds.source_map
+            else set()
+        )
         result = []
-        for ep in ds.episodes:
-            e = ep["episode_index"]
-            segments = [
-                dict(r)
-                for r in store.db.execute(
-                    "SELECT * FROM selections WHERE dataset=? AND episode=? ORDER BY start",
-                    (key, e),
-                )
-            ]
-            source, first_source_frame, _ = ds.source_key(e, 0, key)
-            count = store.db.execute(
-                "SELECT COUNT(*) FROM annotations WHERE source=? AND status='reviewed'",
-                (source,),
-            ).fetchone()[0]
-            records = [
-                dict(r)
-                for r in store.db.execute(
-                    "SELECT * FROM annotations WHERE source=? ORDER BY CASE kind WHEN 'point' THEN 1 ELSE 0 END,id",
+        with store.lock:
+            version = store.get("schema_version", 1)
+            for ep in ds.episodes:
+                e = ep["episode_index"]
+                if requested and not shared_sources and e not in requested:
+                    continue
+                source, first, _ = ds.source_key(e, 0, key)
+                if requested and e not in requested and source not in shared_sources:
+                    continue
+                segments = [
+                    dict(row)
+                    for row in store.db.execute(
+                        "SELECT * FROM selections WHERE dataset=? AND episode=? ORDER BY start,id",
+                        (key, e),
+                    )
+                ]
+                count = store.db.execute(
+                    "SELECT COUNT(*) FROM annotations WHERE source=? AND status='reviewed'",
                     (source,),
+                ).fetchone()[0]
+                end = first + ep["length"]
+                records = store.db.execute(
+                    "SELECT arm,field,start,end,status,version FROM annotations "
+                    "WHERE source=? AND start<? AND end>? "
+                    "ORDER BY CASE kind WHEN 'point' THEN 1 ELSE 0 END,id",
+                    (source, end, first),
                 )
-            ]
-            reviewed_frames = 0
-            version = store.schema()["version"]
-            for source_frame in range(
-                first_source_frame, first_source_frame + ep["length"]
-            ):
-                effective = {
-                    (r["arm"], r["field"]): r
-                    for r in records
-                    if r["start"] <= source_frame < r["end"]
-                }
-                reviewed_frames += int(
-                    any(
-                        r["status"] == "reviewed" and r["version"] == version
-                        for r in effective.values()
+                reviewed_frames = sum(
+                    upper - lower
+                    for lower, upper, effective in effective_ranges(records, first, end)
+                    if any(
+                        row["status"] == "reviewed" and row["version"] == version
+                        for row in effective.values()
                     )
                 )
-            result.append(
-                {
-                    **ep,
-                    "selections": segments,
-                    "reviewed_records": count,
-                    "reviewed_frames": reviewed_frames,
-                }
-            )
+                result.append(
+                    {
+                        **ep,
+                        "selections": segments,
+                        "reviewed_records": count,
+                        "reviewed_frames": reviewed_frames,
+                    }
+                )
         return result
 
     @app.get("/api/filesystem/directories")
@@ -637,8 +655,12 @@ def create_app(work_root):
         }
 
     @app.get("/api/datasets/{key}")
-    def dataset_info(key: str):
+    def dataset_info(key: str, episode: list[int] | None = Query(default=None)):
         ds = get_dataset(key)
+        with store.lock:
+            summary = episode_summary(key, ds, episode)
+            revision = store.get("revision", 0)
+            schema_version = store.get("schema_version", 1)
         return {
             "fingerprint": key,
             "root": str(ds.root),
@@ -650,7 +672,9 @@ def create_app(work_root):
                     "SELECT report FROM datasets WHERE fingerprint=?", (key,)
                 ).fetchone()[0]
             ),
-            "episodes": episode_summary(key, ds),
+            "episodes": summary,
+            "revision": revision,
+            "schema_version": schema_version,
         }
 
     @app.get("/api/window/{key}/{episode}/{frame}")
@@ -663,41 +687,44 @@ def create_app(work_root):
         future_horizon: float = Query(default=0.25, ge=0.25, le=10),
         history_horizon: float = Query(default=0.6, ge=0, le=3600),
         history_frames: int = Query(default=4, ge=1, le=32),
+        track_details: bool = True,
     ):
         ds = get_dataset(key)
         bounds(ds, episode, frame, frame + 1)
-        rows = ds.rows(episode)
+        table = ds.table(episode)
         history_config = HistoryConfig(history_horizon, history_frames)
         history_samples = ds.history_samples(episode, frame, history_config)
         history = [r["frame"] for r in history_samples]
         source, sf, group = ds.source_key(episode, frame, key)
-        if mode == "behavior":
-            with store.lock:
+        with store.lock:
+            if mode == "behavior" and not store.get("future_seen:" + source, False):
                 store.set("future_seen:" + source, True)
                 store.db.commit()
-        with store.lock:
-            labels = store.labels(source, sf, selected(key, episode, frame))
+            schema = store.schema()
+            labels = resolve(
+                schema, store.raw(source, sf), selected(key, episode, frame)
+            )
             window_revision = store.get("revision", 0)
         if mode == "state":
+            visible = {
+                field["field_id"]
+                for field in schema["fields"]
+                if field.get("evidence", "state") == "state"
+            }
             labels = {
-                a: {
-                    k: r
-                    for k, r in fields.items()
-                    if next(
-                        f for f in store.schema()["fields"] if f["field_id"] == k
-                    ).get("evidence", "state")
-                    == "state"
-                }
+                a: {k: r for k, r in fields.items() if k in visible}
                 for a, fields in labels.items()
             }
         lo = (
             next((i for i in history if i is not None), frame) if mode == "state" else 0
         )
-        hi = frame + 1 if mode == "state" else len(rows)
+        hi = frame + 1 if mode == "state" else len(table)
+        rows = table.slice(lo, hi - lo).to_pylist()
+        current = rows[frame - lo]
         telemetry = []
-        for i in range(lo, hi):
-            r = {"frame": i, "timestamp": rows[i]["timestamp"]}
-            for k, v in rows[i].items():
+        for i, row in enumerate(rows, start=lo):
+            r = {"frame": i, "timestamp": row["timestamp"]}
+            for k, v in row.items():
                 feature = ds.info["features"].get(k, {})
                 named_scalar = (
                     isinstance(v, Real)
@@ -713,17 +740,19 @@ def create_app(work_root):
             telemetry.append(r)
         tracks = []
         if mode == "behavior":
+            columns = "*" if track_details else "id,arm,field,start,end,value,status"
             tracks = [
                 dict(r)
                 for r in store.db.execute(
-                    "SELECT * FROM annotations WHERE source=?", (source,)
+                    f"SELECT {columns} FROM annotations WHERE source=? ORDER BY id",
+                    (source,),
                 )
             ]
         return {
             "request_id": request_id,
             "revision": window_revision,
             "frame": frame,
-            "timestamp": rows[frame]["timestamp"],
+            "timestamp": current["timestamp"],
             "history": history_samples,
             "history_config": history_config.to_dict(),
             "future": ds.future(episode, frame, future_horizon)
@@ -737,14 +766,14 @@ def create_app(work_root):
             "selections": [
                 dict(r)
                 for r in store.db.execute(
-                    "SELECT * FROM selections WHERE dataset=? AND episode=? ORDER BY start",
+                    "SELECT * FROM selections WHERE dataset=? AND episode=? ORDER BY start,id",
                     (key, episode),
                 )
             ],
             "events": [
                 dict(r)
                 for r in store.db.execute(
-                    "SELECT * FROM events WHERE source=?", (source,)
+                    "SELECT * FROM events WHERE source=? ORDER BY id", (source,)
                 )
             ]
             if mode == "behavior"
@@ -752,19 +781,17 @@ def create_app(work_root):
             "reviews": [
                 dict(r)
                 for r in store.db.execute(
-                    "SELECT * FROM reviews WHERE source=?", (source,)
+                    "SELECT * FROM reviews WHERE source=? ORDER BY id", (source,)
                 )
             ]
             if mode == "behavior"
             else [],
             "tracks": tracks,
-            "complete_errors": semantic_errors(store.labels(source, sf), store.schema())
+            "complete_errors": semantic_errors(labels, schema)
             if mode == "behavior"
             else [],
             "task": next(
-                t["task"]
-                for t in ds.tasks
-                if t["task_index"] == rows[frame]["task_index"]
+                t["task"] for t in ds.tasks if t["task_index"] == current["task_index"]
             ),
         }
 
@@ -875,9 +902,10 @@ def create_app(work_root):
 
     @app.post("/api/annotations/batch")
     def annotate_batch(body: BatchAnnotationRequest):
+        dataset_for = cache(get_dataset)
         changes = []
         for item in body.changes:
-            ds = get_dataset(item.dataset)
+            ds = dataset_for(item.dataset)
             bounds(ds, item.episode, item.start, item.end)
             if item.point and item.end != item.start + 1:
                 raise ValueError("逐帧覆盖仅能作用于一帧")
@@ -904,7 +932,7 @@ def create_app(work_root):
         focus = None
         if body.focus:
             item = body.focus
-            ds = get_dataset(item.dataset)
+            ds = dataset_for(item.dataset)
             bounds(ds, item.episode, item.frame, item.frame + 1)
             source, sf, _ = ds.source_key(item.episode, item.frame, item.dataset)
             focus = {
@@ -1244,7 +1272,12 @@ def main():
     args = parser.parse_args()
     import uvicorn
 
-    uvicorn.run(create_app(args.work), host="127.0.0.1", port=args.port)
+    with workspace_lock(args.work) as root:
+        app = create_app(root)
+        try:
+            uvicorn.run(app, host="127.0.0.1", port=args.port)
+        finally:
+            app.state.schemes.wait_for_backups()
 
 
 if __name__ == "__main__":

@@ -1,8 +1,8 @@
 """Review existing effective labels without propagating values across a selection."""
 
-import copy
 import json
 from .history import HistoryConfig
+from .ranges import gate_records
 from .schema import resolve, semantic_errors
 
 
@@ -31,18 +31,6 @@ def review_labels(
             raise ValueError("schema 已变更，请刷新后重新审核")
         if expected_revision is not None and expected_revision != revision:
             raise ValueError("标注已变化，请等待画面刷新后重新预检查/审核")
-        records = [
-            dict(row)
-            for row in store.db.execute(
-                "SELECT * FROM annotations WHERE source=? AND start<? AND end>? ORDER BY CASE kind WHEN 'point' THEN 1 ELSE 0 END,id",
-                (source, end, start),
-            )
-        ]
-        boundaries = sorted(
-            {start, end}
-            | {max(start, r["start"]) for r in records}
-            | {min(end, r["end"]) for r in records}
-        )
         fields = [
             (arm, f)
             for f in schema["fields"]
@@ -70,18 +58,8 @@ def review_labels(
             updated_records=0,
         )
         issues, issue_last, plans = [], {}, {}
-        for a, b in zip(boundaries, boundaries[1:]):
-            effective = {
-                (r["arm"], r["field"]): r for r in records if r["start"] <= a < r["end"]
-            }
-            raw = {"left": {}, "right": {}, "global": {}}
-            for (arm, field), r in effective.items():
-                raw[arm][field] = dict(
-                    value_id=r["value"],
-                    review_status=r["status"],
-                    schema_version=r["version"],
-                )
-            prospective = copy.deepcopy(raw)
+        for a, b, effective in store.annotation_ranges(source, start, end):
+            prospective = gate_records(effective)
             for arm, f in fields:
                 record = prospective[arm].get(f["field_id"])
                 if record and any(

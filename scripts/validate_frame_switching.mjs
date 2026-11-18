@@ -130,9 +130,9 @@ const waitFrame = async (frame, episode = 0) => {
         images.length === 3 &&
         images.every(
           (image) =>
-            image
-              .getAttribute("src")
-              .endsWith(`/${episode}/${images.indexOf(image)}/${frame}`) &&
+            new URL(image.src).pathname.endsWith(
+              `/${episode}/${images.indexOf(image)}/${frame}`,
+            ) &&
             image.complete &&
             image.naturalWidth > 0,
         ) &&
@@ -247,7 +247,19 @@ try {
   await sourceFrame().fill("31");
   await waitFrame(31);
   assert.equal(await phase().inputValue(), "2");
+  const summaryAfterSave = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return (
+      url.pathname === `/api/datasets/${key}` &&
+      url.searchParams.get("episode") === "0"
+    );
+  });
   await phase().selectOption("4");
+  const summary = await (await summaryAfterSave).json();
+  assert.deepEqual(
+    summary.episodes.map((episode) => episode.episode_index),
+    [0],
+  );
   await page.waitForFunction(
     () =>
       document.querySelector('[aria-label="left phase"]').value === "4" &&

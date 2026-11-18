@@ -6,6 +6,8 @@ import shutil
 import threading
 import time
 from pathlib import Path
+
+from .ranges import effective_ranges, gate_records
 from .schema import (
     default_schema,
     validate_schema,
@@ -15,19 +17,25 @@ from .schema import (
     semantic_errors,
     prepare_schema,
 )
+from .storage import Backups, workspace_path
+from .undo_log import (
+    COMPRESSED_ROWS,
+    TABLES,
+    ensure_encoding_column,
+    finish_capture,
+    start_capture,
+    unpack_state,
+)
 
 
 class Store:
-    def __init__(self, root):
-        self.root = Path(root).resolve()
-        if any(
-            (p / "meta/info.json").exists() for p in [self.root, *self.root.parents]
-        ):
-            raise ValueError("工作目录不得位于数据集内部，尚未写入任何工作文件")
+    def __init__(self, root, *, startup_backup=True):
+        self.root = workspace_path(root)
         self.root.mkdir(parents=True, exist_ok=True)
         self.lock = threading.RLock()
         self._local = threading.local()
         self._connections = []
+        self.backups = Backups(self.root)
         self.db = sqlite3.connect(
             self.root / "project.sqlite3", check_same_thread=False
         )
@@ -40,8 +48,13 @@ class Store:
         CREATE TABLE IF NOT EXISTS selections(id INTEGER PRIMARY KEY,dataset TEXT,episode INTEGER,start INTEGER,end INTEGER);
         CREATE TABLE IF NOT EXISTS reviews(id INTEGER PRIMARY KEY,source TEXT,start INTEGER,end INTEGER,status TEXT,reason TEXT);
         CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY,source TEXT,frame INTEGER,arm TEXT,type TEXT,status TEXT,details TEXT);
-        CREATE TABLE IF NOT EXISTS history(id INTEGER PRIMARY KEY AUTOINCREMENT,before_state TEXT,after_state TEXT,description TEXT,created REAL);
+        CREATE TABLE IF NOT EXISTS history(id INTEGER PRIMARY KEY AUTOINCREMENT,before_state TEXT,after_state TEXT,description TEXT,created REAL,encoding TEXT NOT NULL DEFAULT 'json');
         CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,payload TEXT);
+        CREATE INDEX IF NOT EXISTS annotations_by_frame ON annotations(source,start,end);
+        CREATE INDEX IF NOT EXISTS annotations_by_field ON annotations(source,arm,field,start,end);
+        CREATE INDEX IF NOT EXISTS selections_by_episode ON selections(dataset,episode,start);
+        CREATE INDEX IF NOT EXISTS reviews_by_source ON reviews(source,start,end);
+        CREATE INDEX IF NOT EXISTS events_by_source ON events(source,frame);
         """)
         if not self.db.execute("SELECT 1 FROM schemas").fetchone():
             s = default_schema()
@@ -58,6 +71,7 @@ class Store:
             self.db.execute(
                 "ALTER TABLE annotations ADD COLUMN provenance TEXT DEFAULT '{}'"
             )
+        ensure_encoding_column(self.db)
         self.db.commit()
         # Interrupted tasks are recoverable failures, never apparent successes.
         for row in self.db.execute("SELECT * FROM jobs").fetchall():
@@ -72,7 +86,8 @@ class Store:
                     if temporary.is_dir() and not temporary.is_symlink():
                         shutil.rmtree(temporary)
                 self.save_job(p)
-        self.backup()
+        if startup_backup:
+            self.backup()
 
     @property
     def db(self):
@@ -91,18 +106,14 @@ class Store:
         self._connections.append(connection)
 
     def close(self):
-        for connection in self._connections:
-            connection.close()
-        self._connections.clear()
+        with self.lock:
+            self.backups.wait()
+            for connection in self._connections:
+                connection.close()
+            self._connections.clear()
 
     def backup(self):
-        target = self.root / "backups"
-        target.mkdir(exist_ok=True)
-        p = target / (time.strftime("%Y%m%d-%H%M%S") + ".sqlite3")
-        with sqlite3.connect(p) as connection:
-            self.db.backup(connection)
-        for old in sorted(target.glob("*.sqlite3"))[:-10]:
-            old.unlink()
+        self.backups.schedule()
 
     def get(self, key, default=None):
         row = self.db.execute(
@@ -125,24 +136,38 @@ class Store:
 
     def snapshot(self):
         return {
-            t: [dict(r) for r in self.db.execute("SELECT * FROM " + t)]
-            for t in ["annotations", "selections", "reviews", "events"]
+            table: [
+                dict(r) for r in self.db.execute(f"SELECT * FROM {table} ORDER BY id")
+            ]
+            for table in TABLES
         }
 
     def restore(self, snapshot):
         for table, rows in snapshot.items():
+            if table not in TABLES:
+                raise ValueError(f"未知标注表 {table!r}")
             self.db.execute("DELETE FROM " + table)
             for row in rows:
-                self.db.execute(
-                    "INSERT INTO "
-                    + table
-                    + " ("
-                    + ",".join(row)
-                    + ") VALUES("
-                    + ",".join("?" for _ in row)
-                    + ")",
-                    tuple(row.values()),
-                )
+                self._insert_row(table, row)
+
+    def _insert_row(self, table, row):
+        columns = ",".join(row)
+        placeholders = ",".join("?" for _ in row)
+        self.db.execute(
+            f"INSERT INTO {table} ({columns}) VALUES ({placeholders})",
+            tuple(row.values()),
+        )
+
+    def _restore_changes(self, changes):
+        for table, rows in changes.items():
+            if table not in TABLES:
+                raise ValueError(f"未知标注表 {table!r}")
+            self.db.executemany(
+                f"DELETE FROM {table} WHERE id=?", ((i,) for i, _ in rows)
+            )
+            for _, row in rows:
+                if row is not None:
+                    self._insert_row(table, row)
 
     @contextlib.contextmanager
     def transaction(self, description):
@@ -151,44 +176,56 @@ class Store:
                 yield
                 return
             self._local.transaction_depth = 1
-            before = self.snapshot()
             try:
-                self.set("revision", self.get("revision", 0) + 1)
+                if not self.db.in_transaction:
+                    self.db.execute("BEGIN IMMEDIATE")
+                start_capture(self.db)
+                revision = self.get("revision", 0) + 1
+                self.set("revision", revision)
                 yield
-                after = self.snapshot()
+                before, after = finish_capture(self.db)
                 cursor = self.get("history_cursor", 0)
                 self.db.execute("DELETE FROM history WHERE id>?", (cursor,))
                 r = self.db.execute(
-                    "INSERT INTO history(before_state,after_state,description,created) VALUES(?,?,?,?)",
-                    (json.dumps(before), json.dumps(after), description, time.time()),
+                    "INSERT INTO history(before_state,after_state,description,created,encoding) VALUES(?,?,?,?,?)",
+                    (before, after, description, time.time(), COMPRESSED_ROWS),
                 )
                 self.set("history_cursor", r.lastrowid)
                 self.db.commit()
-                if self.get("revision", 0) % 20 == 0:
-                    self.backup()
-            except Exception:
+            except BaseException:
                 self.db.rollback()
                 raise
+            else:
+                if revision % 20 == 0:
+                    self.backup()
             finally:
                 self._local.transaction_depth = 0
 
     def undo(self, redo=False):
-        with self.lock:
+        with self.lock, self.db:
+            if not self.db.in_transaction:
+                self.db.execute("BEGIN IMMEDIATE")
             cursor = self.get("history_cursor", 0)
             if not redo and cursor <= self.get("history_floor", 0):
                 return False
             row = (
                 self.db.execute(
-                    "SELECT * FROM history WHERE id>? ORDER BY id LIMIT 1", (cursor,)
+                    "SELECT id,after_state AS state,encoding FROM history WHERE id>? ORDER BY id LIMIT 1",
+                    (cursor,),
                 ).fetchone()
                 if redo
                 else self.db.execute(
-                    "SELECT * FROM history WHERE id=?", (cursor,)
+                    "SELECT id,before_state AS state,encoding FROM history WHERE id=?",
+                    (cursor,),
                 ).fetchone()
             )
             if not row:
                 return False
-            self.restore(json.loads(row["after_state" if redo else "before_state"]))
+            state = unpack_state(row["state"], row["encoding"])
+            if row["encoding"] == COMPRESSED_ROWS:
+                self._restore_changes(state)
+            else:
+                self.restore(state)
             if redo:
                 self.set("history_cursor", row["id"])
             else:
@@ -197,7 +234,6 @@ class Store:
                 ).fetchone()[0]
                 self.set("history_cursor", prev or 0)
             self.set("revision", self.get("revision", 0) + 1)
-            self.db.commit()
             return True
 
     def history_barrier(self):
@@ -229,9 +265,29 @@ class Store:
     def labels(self, source, frame, center=True):
         return resolve(self.schema(), self.raw(source, frame), center)
 
+    def annotation_ranges(self, source, start, end):
+        records = self.db.execute(
+            "SELECT * FROM annotations WHERE source=? AND start<? AND end>? "
+            "ORDER BY CASE kind WHEN 'point' THEN 1 ELSE 0 END,id",
+            (source, end, start),
+        )
+        return effective_ranges(records, start, end)
+
+    def _validate_reviewed(self, schema, source, start, end, arm):
+        for _, _, effective in self.annotation_ranges(source, start, end):
+            errors = [
+                error
+                for error in semantic_errors(
+                    resolve(schema, gate_records(effective)), schema
+                )
+                if "缺少必填" not in error and error.startswith(arm + ":")
+            ]
+            if errors:
+                raise ValueError("；".join(errors))
+
     def _split_write(self, table, where, args, start, end):
         rows = self.db.execute(
-            "SELECT * FROM " + table + " WHERE " + where + " AND start<? AND end>?",
+            f"SELECT * FROM {table} WHERE {where} AND start<? AND end>? ORDER BY id",
             (*args, end, start),
         ).fetchall()
         for row in rows:
@@ -294,17 +350,21 @@ class Store:
         if reviewed and mode == "state" and not confirmed:
             raise ValueError("需要确认允许观测支持当前标签")
         eligible = []
+        changed_frames = []
         skipped = 0
         undetermined = 0
-        for frame in range(start, end):
-            labels = self.labels(source, frame)
+        for lower, upper, effective in self.annotation_ranges(source, start, end):
+            labels = resolve(schema, gate_records(effective))
             app = labels[arm][field]["applicability"]
             if app == "not_applicable":
-                skipped += 1
+                skipped += upper - lower
                 continue
             if app == "undetermined":
-                undetermined += 1
-            eligible.append(frame)
+                undetermined += upper - lower
+            eligible.extend(range(lower, upper))
+            old = effective.get((arm, field))
+            if not preview and (old["value"] if old is not None else None) != value:
+                changed_frames.extend(range(lower, upper))
         overlaps = self.db.execute(
             "SELECT COUNT(*) FROM annotations WHERE source=? AND arm=? AND field=? AND start<? AND end>?",
             (source, arm, field, end, start),
@@ -333,12 +393,6 @@ class Store:
         }
         if preview:
             return report
-        changed_frames = [
-            frame
-            for frame in eligible
-            if self.raw(source, frame).get(arm, {}).get(field, {}).get("value_id")
-            != value
-        ]
         with self.transaction(f"{arm}.{field} [{start},{end})"):
             runs = []
             for frame in eligible:
@@ -421,7 +475,7 @@ class Store:
                 for dependent_arm, dependent in dependents:
                     for frame in changed_frames:
                         deps = self.db.execute(
-                            "SELECT * FROM annotations WHERE source=? AND arm=? AND field=? AND start<=? AND end>?",
+                            "SELECT * FROM annotations WHERE source=? AND arm=? AND field=? AND start<=? AND end>? ORDER BY id",
                             (source, dependent_arm, dependent, frame, frame),
                         ).fetchall()
                         for dep in deps:
@@ -451,14 +505,8 @@ class Store:
                                 tuple(r.values()),
                             )
             if reviewed and not _defer_review_validation:
-                for frame in eligible:
-                    errors = [
-                        e
-                        for e in semantic_errors(self.labels(source, frame), schema)
-                        if "缺少必填" not in e and e.startswith(arm + ":")
-                    ]
-                    if errors:
-                        raise ValueError("；".join(errors))
+                for a, b in runs:
+                    self._validate_reviewed(schema, source, a, b, arm)
         return report
 
     def annotate_batch(
@@ -514,17 +562,13 @@ class Store:
                     reports.append({"index": index, **report})
                 for change in changes:
                     if change.get("reviewed"):
-                        for frame in range(change["start"], change["end"]):
-                            errors = [
-                                e
-                                for e in semantic_errors(
-                                    self.labels(change["source"], frame), schema
-                                )
-                                if "缺少必填" not in e
-                                and e.startswith(change["arm"] + ":")
-                            ]
-                            if errors:
-                                raise ValueError("；".join(errors))
+                        self._validate_reviewed(
+                            schema,
+                            change["source"],
+                            change["start"],
+                            change["end"],
+                            change["arm"],
+                        )
                 result = {
                     "reports": sorted(reports, key=lambda r: r["index"]),
                     "saved": not preview,
@@ -575,7 +619,7 @@ class Store:
             rows = [
                 dict(r)
                 for r in self.db.execute(
-                    "SELECT * FROM selections WHERE dataset=? AND episode=? ORDER BY start",
+                    "SELECT * FROM selections WHERE dataset=? AND episode=? ORDER BY start,id",
                     (dataset, episode),
                 )
             ]

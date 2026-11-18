@@ -88,7 +88,7 @@ class Exporter:
             selections = [
                 dict(r)
                 for r in self.store.db.execute(
-                    "SELECT * FROM selections WHERE dataset=? ORDER BY episode,start",
+                    "SELECT * FROM selections WHERE dataset=? ORDER BY episode,start,id",
                     (fingerprint,),
                 )
             ]
@@ -195,6 +195,7 @@ class Exporter:
         )
         temporary = target.parent / ("." + target.name + ".partial-" + job["id"])
         begun = time.perf_counter()
+        frozen_store = None
 
         def update(**kw):
             job.update(kw)
@@ -217,7 +218,7 @@ class Exporter:
             # Frozen database state avoids edits racing the background export.
             from .store import Store
 
-            frozen_store = Store(temporary / ".snapshot")
+            frozen_store = Store(temporary / ".snapshot", startup_backup=False)
             frozen_store.restore(frozen)
             frozen_store.db.execute("DELETE FROM schemas")
             frozen_store.db.execute(
@@ -763,7 +764,8 @@ class Exporter:
                 ),
                 ann / "intervals.parquet",
             )
-            frozen_store.db.close()
+            frozen_store.close()
+            frozen_store = None
             shutil.rmtree(temporary / ".snapshot")
             summary["elapsed_seconds"] = time.perf_counter() - begun
             write_json(ann / "validation_report.json", summary)
@@ -830,6 +832,8 @@ class Exporter:
                 summary=summary,
             )
         except Exception as exc:
+            if frozen_store is not None:
+                frozen_store.close()
             if temporary.exists():
                 shutil.rmtree(temporary)
             update(

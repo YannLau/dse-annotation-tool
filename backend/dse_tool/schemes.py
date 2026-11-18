@@ -8,6 +8,7 @@ import time
 
 from .exporter import Exporter
 from .schema import digest, import_schema
+from .storage import backup_paths
 from .store import Store
 
 
@@ -21,7 +22,7 @@ class Scoped:
 
 class Schemes:
     def __init__(self, root):
-        self.base = Store(root)
+        self.base = Store(root, startup_backup=False)
         if not self.base.get("scheme_info"):
             self.base.set(
                 "scheme_info",
@@ -32,6 +33,7 @@ class Schemes:
                 },
             )
             self.base.db.commit()
+        self.base.backup()
         self.instances = {"default": (self.base, Exporter(self.base))}
         self.context = contextvars.ContextVar(
             "annotation_scheme", default=self.instances["default"]
@@ -58,6 +60,10 @@ class Schemes:
                 state = self.base.get("scheme_states", {})[info["id"]]
                 trash.append({**info, **state})
             return {"schemes": self.list(), "trash": trash}
+
+    def wait_for_backups(self):
+        for store, _ in self.instances.values():
+            store.backups.wait()
 
     def lifecycle(self, key, action, confirmation=None):
         with self.base.lock:
@@ -97,6 +103,7 @@ class Schemes:
                 self.base.set("scheme_states", states)
                 self.base.db.commit()
                 if key == "default":
+                    self.base.backups.wait()
                     with self.base.db:
                         for table in (
                             "annotations",
@@ -127,7 +134,7 @@ class Schemes:
                 # Delete only generated database backups, preserving user exports.
                 backups = root / "backups"
                 if backups.is_dir() and not backups.is_symlink():
-                    for backup in backups.glob("????????-??????.sqlite3"):
+                    for backup in backup_paths(backups):
                         if backup.is_file() or backup.is_symlink():
                             backup.unlink()
                 states[key] = {**state, "status": "deleted"}
@@ -165,7 +172,7 @@ class Schemes:
             root = self.base.root / "schemes" / info["id"]
             store = None
             try:
-                store = Store(root)
+                store = Store(root, startup_backup=False)
                 with store.db:
                     store.db.execute("DELETE FROM schemas")
                     store.db.execute(
@@ -182,8 +189,9 @@ class Schemes:
             except Exception:
                 self.base.db.rollback()
                 if store is not None:
-                    store.db.close()
+                    store.close()
                 shutil.rmtree(root, ignore_errors=True)
                 raise
             self.instances[info["id"]] = (store, Exporter(store))
+            store.backup()
             return info

@@ -168,7 +168,15 @@ Training integration boundaries: images have not undergone SigLIP processor norm
 
 ## Recovery and Validation
 
-The work directory contains `project.sqlite3` (WAL transactions), schemas, cache, backups, and logs. Restart with the same `--work` to recover. Automatic backups run at startup and every 20 edits, retaining 10 files. Before restoring, stop the service, copy the backup to project.sqlite3, and move aside old `-wal/-shm` files. Caches can be deleted and rebuilt. Changed source contents/signatures block old mappings and require re-import. After moving a source directory, enter its new path to rebind; identical content reuses the UUID.
+The work directory contains `project.sqlite3` (WAL transactions), schemas, cache, backups, and logs. Restart with the same `--work` to recover. Backups run in the background at startup and every 20 revisions, keeping the latest 10 SQLite files. Before restoring, stop the service, copy the backup to `project.sqlite3`, and move aside old `-wal/-shm` files. Caches can be deleted and rebuilt. Re-import if source contents or signatures change. After moving a source directory, enter its new path to rebind. Identical content reuses the UUID.
+
+New edits record the changed rows for undo and redo. The tool can still read full snapshots from earlier releases. To reclaim space from an existing workspace, stop the annotation service, run the following command, and restart with the same `--work`.
+
+```bash
+./.venv/bin/python -m dse_tool.maintenance --work ./workspaces/my-project
+```
+
+The command rebuilds and checks the workspace database, its scheme databases, and their automatic backups. It preserves revisions and restore points. Source and exported datasets stay in their existing directories. Use the updated tool to restore a compacted backup or undo a revision created by this release.
 
 ```bash
 ./scripts/test.sh -q
