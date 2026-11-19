@@ -58,7 +58,7 @@ Preview the chosen scope, then accept candidates. A selection preview scans prec
 
 Adviser describes observed short-window movement in a qualified demonstration: x/y/z directions and significant orientation adjustment. It does not derive a target-error correction, establish alignment, or authorize closing/releasing. none/keep means only no significant motion in that component.
 
-Both dse_v1 and generic schemes are supported. Target fields must actually exist among `adviser.x/y/z/orientation` and be categorical, each_arm, and behavior evidence. No fixed phase IDs are imposed on generic schemes. Missing, gated-off, or undetermined fields have explicit reasons, and only a subset of components may be enabled.
+Both dse_v1 and generic schemes support suggestions for published `adviser.x/y/z`, `adviser.orientation`, and `adviser.rot_x/rot_y/rot_z` fields with categorical type, each_arm scope, and behavior evidence. Each field's gates determine its applicability.
 
 Workflow:
 
@@ -73,13 +73,19 @@ Applicability and requiredness are separate. Only true applicability permits cal
 
 One adviser target selection is limited to 5,000 frames; preview longer ranges in sections. Every selected frame uses its own window. Qualified future evidence may extend up to 0.25 s beyond the target selection, while saved labels remain inside the selection. Longer future-image display horizons do not change this limit. Translation uses max(5 mm, 3×position noise), and orientation uses max(5°, 3×angular noise). Significant reversal/cancellation maps the affected component to unknown, rather than treating a small net change as none/keep. Invalid quaternions cannot produce keep; valid positions can still support translation independently.
 
+### Rotation direction and angle
+
+The `adviser.orientation` preview shows the net angle, total traveled angle, and net rotation vector in robot-base coordinates. The rotation vector is the shortest rotation's unit axis multiplied by its angle. The preview displays each component in degrees, with signs following the right-hand rule. For example, `Z +12°` indicates a 12-degree component along the base +Z axis.
+
+In **Fields and rules**, click **Add adviser rotation direction fields** to put `adviser.rot_x`, `adviser.rot_y`, and `adviser.rot_z` in the draft. The fields are optional and inherit the per-arm `adviser.orientation` applicability rule when present. They default to applicable otherwise. Once published, the fields receive `none`, `positive`, `negative`, or `unknown` suggestions in **Behavior and calibration**. Each component uses the angular threshold independently. A substantial reversal or disagreement between the accumulated signed component and the net component gives `unknown` for that axis. Near-half-turn rotations produce `unknown` direction.
+
 Acceptance fills only truly absent entries and preserves human values, unknowns, reviewed/needs-review records, and explicit single-frame missing overrides. New records have `label_source=rule_suggestion`, `review_status=draft`, and mask=0 before human review. One undo restores an accepted batch. Changes to the scheme, target range, revisions, action review, events, or calibration require a fresh preview.
 
 ## Storage and export
 
 Event origin/configuration is stored in events.details in the work database. In `annotations/intervals.parquet`, filter table=events, parse payload, then parse details. Units are in `details.calibration.unit`, not a separate Parquet column. Manual events usually contain only a human-origin marker.
 
-Accepted adviser records carry provenance in `annotations/labels.parquet` and annotation rows in `intervals.parquet`. New provenance includes the rule version, input dataset/frame, stable source UUID/frame, actual evidence window, gate dependencies, class mapping, calibration, approved basis, and cutoff reason. Older candidates may use flat window/coordinate_config fields; interpret the actual rule_version.
+Accepted adviser records carry provenance in `annotations/labels.parquet` and annotation rows in `intervals.parquet`. New provenance includes the rule version, input dataset/frame, stable source UUID/frame, actual evidence window, gate dependencies, class mapping, calibration, approved basis, and cutoff reason. Rotation suggestions add `provenance.rotation` with the base frame, net and traveled angles, and the net rotation vector when available. Older candidates may use flat window/coordinate_config fields. Interpret the recorded rule_version.
 
 Task references and auxiliary calibration settings are frozen into `annotations/behavior_protocol.json`; manifest.behavior_protocol records its path and SHA-256. Original tasks.jsonl text is preserved. The attachment contains only the current dataset's task settings and per-arm auxiliary profiles; unscoped legacy notes are retained separately as legacy_task_notes. The protocol is restored only when explicitly restoring exported annotations, not when loading sources alone. Restored event/pose calibration clears verified and the old binding and needs fresh verification. It records user declarations and does not certify physical calibration or semantic-label correctness.
 

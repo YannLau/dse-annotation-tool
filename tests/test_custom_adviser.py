@@ -9,7 +9,7 @@ from dse_tool.schema import digest
 from dse_tool.store import Store
 
 
-def generic_schema():
+def generic_schema(*, rotation=False):
     gate = {"field": "global.enable", "op": "eq", "value": 20}
     fields = [
         {
@@ -28,7 +28,10 @@ def generic_schema():
             "required_when": True,
         }
     ]
-    for i, axis in enumerate(("x", "y", "z", "orientation")):
+    axes = ("x", "y", "z", "orientation")
+    if rotation:
+        axes += ("rot_x", "rot_y", "rot_z")
+    for i, axis in enumerate(axes):
         roles = (
             ("keep", "adjust", "unsure")
             if axis == "orientation"
@@ -317,6 +320,90 @@ def test_motion_reversal_and_quaternion_sign_are_semantic_unknowns(setup):
     assert result["results"][0]["provenance"]["needs_review"]
 
 
+def record_rotation(ds, axis, angles):
+    # Start tilted 90 degrees about Y so base- and tool-frame axes differ.
+    start_xyz = np.array([0, 2**-0.5, 0])
+    start_w = 2**-0.5
+    for i, angle in enumerate(angles):
+        half = np.deg2rad(angle) / 2
+        xyz, w = np.array(axis) * np.sin(half), np.cos(half)
+        pose_xyz = w * start_xyz + start_w * xyz + np.cross(xyz, start_xyz)
+        pose_w = w * start_w - np.dot(xyz, start_xyz)
+        # Scale and flip equivalent quaternions on alternating frames.
+        ds.data[i]["observation.ee_pose_left"][3:] = (
+            np.append(pose_xyz, pose_w) * (-1.2 if i % 2 else 1)
+        ).tolist()
+
+
+def test_rotation_preview_uses_calibrated_base_and_preserves_legacy_fields(setup):
+    store, ds, service, request = setup
+    record_rotation(ds, (0.6, 0.8, 0), np.linspace(0, 20, 6))
+    request.calibration["transform"] = [
+        [0, -1, 0, 0],
+        [1, 0, 0, 0],
+        [0, 0, 1, 0],
+        [0, 0, 0, 1],
+    ]
+    legacy = service.preview(request)["results"]
+    assert len(legacy) == 4
+    orientation = legacy[-1]
+    assert orientation["semantic"] == "adjust"
+    rotation = orientation["provenance"]["rotation"]
+    assert rotation["frame"] == "robot_base"
+    assert rotation["rotation_vector_deg"] == pytest.approx([-16, 12, 0])
+    assert rotation["path_angle_deg"] == pytest.approx(20)
+    assert rotation["net_angle_deg"] == pytest.approx(20)
+
+    store.publish(generic_schema(rotation=True))
+    caps = service.capabilities(request)["fields"]
+    assert all(f["code"] == "ready" for f in caps)
+    result = service.preview(request)
+    assert result["summary"]["savable"] == 7
+    assert [row["semantic"] for row in result["results"][-3:]] == [
+        "negative",
+        "positive",
+        "none",
+    ]
+    assert all(r["provenance"]["rotation"] == rotation for r in result["results"][-3:])
+
+    noisy_request = request.model_copy(
+        update={"calibration": {**request.calibration, "angle_noise": np.deg2rad(5)}}
+    )
+    noisy = service.preview(noisy_request)["results"]
+    assert [row["semantic"] for row in noisy[-3:]] == ["negative", "none", "none"]
+
+
+@pytest.mark.parametrize(
+    "angles, semantics, ambiguity, orientation",
+    [
+        ([0, 20, 0, 0, 0, 0], ["none", "none", "unknown"], "axis_reversal", "unknown"),
+        (np.linspace(0, 180, 6), ["unknown"] * 3, "half_turn", "adjust"),
+        (
+            np.linspace(0, 360, 6),
+            ["none", "none", "unknown"],
+            "axis_path_mismatch",
+            "unknown",
+        ),
+    ],
+)
+def test_rotation_directions_require_consistent_motion(
+    setup, angles, semantics, ambiguity, orientation
+):
+    store, ds, _, _ = setup
+    store.publish(generic_schema(rotation=True))
+    record_rotation(ds, (0, 0, 1), angles)
+    result, _ = preview(setup)
+    rows = result["results"]
+    assert rows[3]["semantic"] == orientation
+    assert [row["semantic"] for row in rows[-3:]] == semantics
+    provenance = rows[-1]["provenance"]
+    assert provenance["needs_review"]
+    assert provenance["rotation_ambiguity"] == ambiguity
+    assert (provenance["rotation"]["rotation_vector_deg"] is None) == (
+        ambiguity == "half_turn"
+    )
+
+
 def test_partial_field_and_arm_gates(setup):
     store, ds, service, request = setup
     schema = store.schema()
@@ -387,7 +474,8 @@ def test_api_generic_preview_accept_review_export_roundtrip(source, tmp_path):
         assert imported.status_code == 200, imported.text
         key = imported.json()["fingerprint"]
         created = client.post(
-            "/api/schemes", json={"name": "Generic adviser", "schema": generic_schema()}
+            "/api/schemes",
+            json={"name": "Generic adviser", "schema": generic_schema(rotation=True)},
         )
         assert created.status_code == 200, created.text
         scheme = created.json()
@@ -435,14 +523,14 @@ def test_api_generic_preview_accept_review_export_roundtrip(source, tmp_path):
         assert cap.json()["available"]
         result = client.post("/api/adviser/preview", headers=headers, json=body)
         assert result.status_code == 200, result.text
-        assert result.json()["summary"]["savable"] == 12
+        assert result.json()["summary"]["savable"] == 21
         assert (
             client.post(
                 "/api/adviser/apply",
                 headers=headers,
                 json={**body, "plan_id": result.json()["plan_id"]},
             ).json()["saved"]
-            == 12
+            == 21
         )
         assert (
             store.labels(source_id, 10)["left"]["adviser.x"]["effective_loss_mask"] == 0
@@ -469,9 +557,19 @@ def test_api_generic_preview_accept_review_export_roundtrip(source, tmp_path):
         provenance = json.loads(valid[0]["provenance"])
         assert provenance["rule_version"] == "schema-approved-displacement-1"
         assert provenance["window"]["source_start"] == valid[0]["source_frame_index"]
+        rotation_labels = [
+            r
+            for r in labels
+            if r["field_id"] == "adviser.rot_z" and r["effective_loss_mask"]
+        ]
+        assert len(rotation_labels) == 3
+        rotation_provenance = json.loads(rotation_labels[0]["provenance"])
+        assert rotation_provenance["rule_version"] == "schema-approved-rotation-1"
+        assert rotation_provenance["rotation"]["rotation_vector_deg"] == [0, 0, 0]
         reader = DSEDataset(destination, tmp_path / "reader-cache", size=16)
         sample = reader[0]
         assert sample["loss_masks"]["left"]["adviser.x"] == 1
+        assert sample["loss_masks"]["left"]["adviser.rot_z"] == 1
         reopened = client.post(
             "/api/import",
             headers=headers,

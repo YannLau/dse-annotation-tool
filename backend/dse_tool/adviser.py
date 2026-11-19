@@ -12,8 +12,12 @@ from typing import Literal
 
 from .schema import digest, field_map, references, resolve
 
-FIELDS = tuple("adviser." + name for name in ("x", "y", "z", "orientation"))
+ORIENTATION_FIELD = "adviser.orientation"
+TRANSLATION_AXES = {f"adviser.{axis}": i for i, axis in enumerate("xyz")}
+ROTATION_AXES = {f"adviser.rot_{axis}": i for i, axis in enumerate("xyz")}
+FIELDS = (*TRANSLATION_AXES, ORIENTATION_FIELD)
 RULE_VERSION = "schema-approved-displacement-1"
+ROTATION_RULE_VERSION = "schema-approved-rotation-1"
 MAX_TARGET_FRAMES = 5000
 
 
@@ -33,7 +37,7 @@ def class_mapping(field, explicit):
     """Return semantic roles mapped to live stable IDs, never category positions."""
     roles = (
         ("keep", "adjust")
-        if field["field_id"].endswith("orientation")
+        if field["field_id"] == ORIENTATION_FIELD
         else ("none", "positive", "negative")
     )
     live = {c["id"]: c for c in field["classes"] if not c.get("deprecated")}
@@ -61,6 +65,60 @@ def class_mapping(field, explicit):
     if len(set(mapping.values())) != len(mapping):
         raise ValueError("不同语义角色不能共用类别 ID")
     return mapping
+
+
+def relative_rotation(start, end):
+    """Shortest rotation vectors and angles for unit xyzw quaternions."""
+    a, aw = start[..., :3], start[..., 3:]
+    b, bw = end[..., :3], end[..., 3:]
+    # end * conjugate(start) expresses the rotation in the poses' reference frame.
+    xyz = aw * b - bw * a + np.cross(a, b)
+    w = np.sum(start * end, axis=-1)
+    sin_half = np.linalg.norm(xyz, axis=-1)
+    angles = 2 * np.arctan2(sin_half, abs(w))
+    scale = np.divide(angles, sin_half, out=np.zeros_like(angles), where=sin_half > 0)
+    signed_scale = np.where(w < 0, -scale, scale)
+    return xyz * signed_scale[..., None], angles
+
+
+def rotation_suggestions(measurements, source_to_base, dead):
+    quaternions = np.asarray(measurements)
+    net, angle = relative_rotation(quaternions[0], quaternions[-1])
+    steps, step_angles = relative_rotation(quaternions[:-1], quaternions[1:])
+    # The calibration conjugates the relative rotation and rotates its axis.
+    net = source_to_base @ net
+    steps = steps @ source_to_base.T
+    path = math.fsum(step_angles)
+    half_turn_limit = math.pi - min(dead, math.pi / 2)
+    net_half_turn = angle >= half_turn_limit
+    ambiguous_sign = net_half_turn or np.any(step_angles >= half_turn_limit)
+    evidence = {
+        "frame": "robot_base",
+        "net_angle_deg": math.degrees(angle),
+        "path_angle_deg": math.degrees(path),
+        "rotation_vector_deg": None if net_half_turn else np.degrees(net).tolist(),
+    }
+    semantics = {
+        ORIENTATION_FIELD: ("unknown", "angular_path_excess")
+        if path - angle > dead
+        else ("adjust" if angle > dead else "keep", None)
+    }
+    travel = steps.sum(axis=0)
+    reversal = np.abs(steps).sum(axis=0) - abs(travel)
+    for field_id, axis in ROTATION_AXES.items():
+        delta = net[axis]
+        if ambiguous_sign:
+            result = ("unknown", "half_turn")
+        elif reversal[axis] > dead:
+            result = ("unknown", "axis_reversal")
+        elif abs(travel[axis] - delta) > dead:
+            result = ("unknown", "axis_path_mismatch")
+        elif abs(delta) <= dead:
+            result = ("none", None)
+        else:
+            result = ("positive" if delta > 0 else "negative", None)
+        semantics[field_id] = result
+    return evidence, semantics
 
 
 def calibration_config(config, dataset, arm, info):
@@ -124,6 +182,8 @@ def dependency_nodes(schema, arm, field_id):
 class Evidence:
     def __init__(self, store, ds, request):
         self.schema = store.schema()
+        self.fields = field_map(self.schema)
+        self.target_fields = (*FIELDS, *(f for f in ROTATION_AXES if f in self.fields))
         self.request = request
         self.rows = ds.rows(request.episode)
         self.keys = [
@@ -141,7 +201,7 @@ class Evidence:
             if r["arm"] == request.arm and r["status"] == "confirmed"
         }
         self.raw_cache, self.label_cache = {}, {}
-        self.mapping = {}
+        self.rotation_cache = {}
         self.future_sources = set()
         try:
             self.feature, self.transform = calibration_config(
@@ -186,7 +246,7 @@ class Evidence:
         return tuple((a, f, self.labels(i)[a][f]["value_id"]) for a, f in nodes)
 
     def capability(self, i, field_id):
-        field = field_map(self.schema).get(field_id)
+        field = self.fields.get(field_id)
         result = {
             "field_id": field_id,
             "exists": field is not None,
@@ -239,7 +299,7 @@ class Evidence:
                 "code": "invalid_calibration",
                 "reason": self.calibration_error,
             }
-        if self.measurement(i, field_id.endswith("orientation")) is None:
+        if self.measurement(i, field_id not in TRANSLATION_AXES) is None:
             return {
                 **result,
                 "code": "missing_pose",
@@ -284,7 +344,7 @@ class Evidence:
         }
         if capability["code"] != "ready":
             return base
-        orientation = field_id.endswith("orientation")
+        orientation = field_id not in TRANSLATION_AXES
         first = self.measurement(start, orientation)
         if first is None:
             return {
@@ -350,17 +410,17 @@ class Evidence:
             }
         config = self.request.calibration
         if orientation:
-
-            def angle(a, b):
-                return 2 * math.acos(float(np.clip(abs(np.dot(a, b)), 0, 1)))
-
-            net = angle(measurements[0], measurements[-1])
-            path = sum(angle(a, b) for a, b in zip(measurements, measurements[1:]))
-            dead = max(math.radians(5), 3 * config.get("angle_noise", 0))
-            ambiguous = path - net > dead
-            semantic = "unknown" if ambiguous else "adjust" if net > dead else "keep"
+            key = (start, stop)
+            if key not in self.rotation_cache:
+                dead = max(math.radians(5), 3 * config.get("angle_noise", 0))
+                self.rotation_cache[key] = rotation_suggestions(
+                    measurements, self.transform[:3, :3], dead
+                )
+            rotation, semantics = self.rotation_cache[key]
+            semantic, rotation_ambiguity = semantics[field_id]
+            ambiguous = rotation_ambiguity is not None
         else:
-            axis = ("x", "y", "z").index(field_id.rsplit(".", 1)[1])
+            axis = TRANSLATION_AXES[field_id]
             positions = np.asarray(measurements)[:, axis]
             with np.errstate(over="ignore", invalid="ignore"):
                 delta = positions[-1] - positions[0]
@@ -388,7 +448,7 @@ class Evidence:
             "duration": duration,
         }
         provenance = {
-            "rule_version": RULE_VERSION,
+            "rule_version": ROTATION_RULE_VERSION if orientation else RULE_VERSION,
             "input_dataset_fingerprint": self.request.dataset,
             "episode": self.request.episode,
             "input_frame": start,
@@ -412,6 +472,10 @@ class Evidence:
             "cutoff_reason": cutoff,
             "needs_review": bool(ambiguous),
         }
+        if orientation:
+            provenance["rotation"] = rotation
+            if rotation_ambiguity:
+                provenance["rotation_ambiguity"] = rotation_ambiguity
         return {
             **base,
             "status": "suggestion",
@@ -464,7 +528,9 @@ class AdviserService:
             ds = self.get_dataset(body.dataset)
             self.bounds(ds, body.episode, body.frame, body.frame + 1)
             evidence = Evidence(self.store, ds, body)
-            fields = [evidence.capability(body.frame, field) for field in FIELDS]
+            fields = [
+                evidence.capability(body.frame, f) for f in evidence.target_fields
+            ]
             context = self.context(body, evidence.schema, body.frame, body.frame + 1)
             # Capability requests are the UI's registration of its current profile.
             # This invalidates a prior preview when another tab changes calibration
@@ -497,7 +563,7 @@ class AdviserService:
             results = [
                 evidence.calculate(i, field)
                 for i in range(start, end)
-                for field in FIELDS
+                for field in evidence.target_fields
             ]
             candidates = [r for r in results if r["status"] == "suggestion"]
             for source in evidence.future_sources:
@@ -518,7 +584,9 @@ class AdviserService:
                 "context": context,
                 "summary": summary,
                 "results": results,
-                "fields": [evidence.capability(start, field) for field in FIELDS],
+                "fields": [
+                    evidence.capability(start, f) for f in evidence.target_fields
+                ],
             }
             key = (str(self.store.root), body.dataset, body.arm)
             self.latest_config[key] = (

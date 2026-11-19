@@ -1,5 +1,12 @@
 import React, { useEffect, useRef, useState } from "react";
 import { t as tr, useI18n, categoryLabel } from "./i18n";
+import {
+  adviserFieldIds,
+  orientationField,
+  rotationAxes,
+  rotationClass,
+  rotationFieldIds,
+} from "./adviserFields";
 import "./behavior-calibration.css";
 
 type Obj = Record<string, any>;
@@ -57,6 +64,57 @@ const semanticLabels: Record<string, string> = {
   adjust: "调整姿态",
   unknown: "无法判断",
 };
+function adviserSemanticLabel(fieldId: string, semantic: string) {
+  const category = rotationClass(fieldId, semantic);
+  return category
+    ? categoryLabel(category)
+    : tr(semanticLabels[semantic] || semantic);
+}
+const rotationAmbiguityLabels: Record<string, string> = {
+  angular_path_excess: "累计转角明显大于净转角",
+  half_turn: "接近半圈，旋转方向不确定",
+  axis_reversal: "该轴存在明显往返转动",
+  axis_path_mismatch: "该轴累计转动与净旋转分量差异过大",
+};
+type RotationMeasurements = {
+  net_angle_deg: number;
+  path_angle_deg: number;
+  rotation_vector_deg: [number, number, number] | null;
+};
+function RotationEvidence({
+  fieldId,
+  measurements,
+  ambiguity,
+}: {
+  fieldId: string;
+  measurements: RotationMeasurements;
+  ambiguity?: string;
+}) {
+  const axis = rotationFieldIds.indexOf(fieldId);
+  const components = measurements.rotation_vector_deg?.map((value, i) => {
+    const angle = Math.abs(value) < 0.05 ? 0 : value;
+    return `${rotationAxes[i]} ${angle > 0 ? "+" : ""}${angle.toFixed(1)}°`;
+  });
+  const issue = ambiguity || (components ? undefined : "half_turn");
+  return (
+    <>
+      <small>
+        {tr("基座净转角 {0}° · 累计 {1}°", [
+          measurements.net_angle_deg.toFixed(1),
+          measurements.path_angle_deg.toFixed(1),
+        ])}
+      </small>
+      {components && (
+        <small>
+          {tr("净旋转分量 {0}", [
+            axis < 0 ? components.join(" · ") : components[axis],
+          ])}
+        </small>
+      )}
+      {issue && <small>{tr(rotationAmbiguityLabels[issue])}</small>}
+    </>
+  );
+}
 const reasonLabels: Record<string, string> = {
   missing_field: "方案未定义此字段",
   field_missing: "方案未定义此字段",
@@ -301,9 +359,7 @@ export default function BehaviorCalibration(props: BehaviorCalibrationProps) {
     end <= frameCount;
   const fieldStates: Obj[] = capability?.fields || [];
   const adviserFields: Obj[] = (schema.fields || []).filter((f: Obj) =>
-    ["adviser.x", "adviser.y", "adviser.z", "adviser.orientation"].includes(
-      f.field_id,
-    ),
+    adviserFieldIds.includes(f.field_id),
   );
   const poseFeatures = Object.entries(dataset.info.features)
     .filter(
@@ -1117,9 +1173,7 @@ export default function BehaviorCalibration(props: BehaviorCalibrationProps) {
             </div>
             {!adviserFields.length && (
               <div className="assist-empty">
-                {tr(
-                  "此方案没有 adviser.x / y / z / orientation 字段，无需使用方向建议。",
-                )}
+                {tr("此方案没有可用于方向建议的 adviser 字段。")}
               </div>
             )}
             {fieldStates
@@ -1254,6 +1308,15 @@ export default function BehaviorCalibration(props: BehaviorCalibrationProps) {
                       "位移死区取 5 mm 与三倍位置噪声的较大值；姿态阈值取 5° 与三倍角噪声的较大值。显著往返运动标为 unknown。",
                     )}
                   </p>
+                  {adviserFields.some(
+                    (f) =>
+                      f.field_id === orientationField ||
+                      rotationFieldIds.includes(f.field_id),
+                  ) && (
+                    <p className="assist-help">
+                      {tr("旋转方向按机器人基座轴的右手定则判定。")}
+                    </p>
+                  )}
                   <label className="assist-check">
                     <input
                       type="checkbox"
@@ -1288,11 +1351,13 @@ export default function BehaviorCalibration(props: BehaviorCalibrationProps) {
                   {adviserFields
                     .filter(
                       (f) =>
-                        f.scope === "each_arm" && f.evidence === "behavior",
+                        f.scope === "each_arm" &&
+                        f.evidence === "behavior" &&
+                        f.type === "categorical",
                     )
                     .map((field) => {
                       const roles =
-                        field.field_id === "adviser.orientation"
+                        field.field_id === orientationField
                           ? ["keep", "adjust"]
                           : ["none", "positive", "negative"];
                       const current =
@@ -1318,7 +1383,10 @@ export default function BehaviorCalibration(props: BehaviorCalibrationProps) {
                               return (
                                 <Field
                                   key={semantic}
-                                  label={semanticLabels[semantic] || semantic}
+                                  label={adviserSemanticLabel(
+                                    field.field_id,
+                                    semantic,
+                                  )}
                                 >
                                   <select
                                     value={inferred}
@@ -1495,9 +1563,7 @@ export default function BehaviorCalibration(props: BehaviorCalibrationProps) {
                               {r.value != null ? (
                                 <>
                                   <strong>
-                                    {tr(
-                                      semanticLabels[r.semantic] || r.semantic,
-                                    )}
+                                    {adviserSemanticLabel(r.field_id, r.semantic)}
                                   </strong>
                                   <small>ID {r.value}</small>
                                 </>
@@ -1511,6 +1577,13 @@ export default function BehaviorCalibration(props: BehaviorCalibrationProps) {
                                   [{r.start}, {r.end}) ·{" "}
                                   {Number(r.duration).toFixed(3)} s
                                 </small>
+                              )}
+                              {r.provenance?.rotation && (
+                                <RotationEvidence
+                                  fieldId={r.field_id}
+                                  measurements={r.provenance.rotation}
+                                  ambiguity={r.provenance.rotation_ambiguity}
+                                />
                               )}
                               {explain(r.code, r.reason)}
                               <small>

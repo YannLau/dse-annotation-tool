@@ -58,7 +58,7 @@ confirmed 事件附近约 ±0.25 秒仍进入导出 key 池，这与 ±0.5 秒�
 
 adviser 描述合格示教采用的实际短窗口运动：x/y/z 为方向，orientation 为是否显著调整姿态。它不推导“应该怎样纠偏”，也不证明当前已对准或具备闭合/释放条件。none/keep 只表示对应分量没有显著运动。
 
-新版同时支持 dse_v1 和 generic。目标字段须是 `adviser.x/y/z/orientation` 中实际存在的 categorical、each_arm、behavior 字段；不用固定 phase ID 判断。没有这些字段、字段门控关闭或依赖未知时，界面给出相应原因。四个字段可以只启用一部分。
+自动建议支持 dse_v1 和 generic。目标可以是 `adviser.x/y/z`、`adviser.orientation` 或 `adviser.rot_x/rot_y/rot_z` 中已发布的 categorical、each_arm、behavior 字段。是否适用由各字段的门控决定。
 
 使用顺序：
 
@@ -73,13 +73,19 @@ adviser 描述合格示教采用的实际短窗口运动：x/y/z 为方向，ori
 
 单次 adviser 目标选区最多 5,000 帧；更长范围应分段预览。选区内每帧使用自己的短窗口，允许读取选区外最多 0.25 秒的合格未来，但只写选区内目标帧。行为页面较长的未来显示跨度不改变计算窗口。平移死区为 max(5 mm, 3×位置噪声)，姿态阈值为 max(5°, 3×角噪声)；明显往返/抵消输出该分量的 unknown，不能以很小的净变化当作 none/keep。无效四元数不会生成 keep；位置有效时平移分量仍可独立计算。
 
+### 旋转方向和角度
+
+`adviser.orientation` 的预览显示净转角、累计转角和机器人基座系的净旋转向量。旋转向量是首尾相对姿态的最短转轴乘转角，预览以度显示三个分量。每个分量的正负遵循对应基座轴的右手定则。例如 `Z +12°` 表示净旋转在基座 +Z 轴上的分量为 12°。
+
+在「字段与规则」点击「添加 adviser 旋转方向字段」，可将 `adviser.rot_x`、`adviser.rot_y`、`adviser.rot_z` 加入草稿。这三个字段默认选填，并沿用当前按臂 `adviser.orientation` 的适用条件。如无相应字段，默认适用。发布后可在「行为与校准」生成 `none`、`positive`、`negative` 或 `unknown` 候选。每轴分量独立使用姿态阈值。若逐帧投影明显往返，或它的累计净值与首尾净分量差异超过阈值，该轴为 `unknown`。相对旋转接近半圈时，方向为 `unknown`。
+
 接受只填真正缺失项，保留人工值、unknown、已审核/需复核值和显式单帧 missing。结果为 `label_source=rule_suggestion`、`review_status=draft`，人工审核前 mask=0；一次接受可一次撤销。方案、范围、标注修订、审核、事件或标定改变后，需要重新预览。
 
 ## 数据保存与导出
 
 事件来源记录在工作库 events.details；导出后在 `annotations/intervals.parquet` 的 table=events 行中，先解析 payload，再解析 details。单位位于 `details.calibration.unit`，不是独立 Parquet 列。手动事件通常只有 human 来源说明。
 
-adviser 接受记录在标签 provenance，导出到 `annotations/labels.parquet` 和 `intervals.parquet` 的 annotation 记录。新版记录规则版本、输入数据/帧、稳定源 UUID/源帧、实际证据窗口、门控依赖、类别映射、标定、approved 依据和截断原因。旧候选可能使用旧的扁平窗口/coordinate_config 结构，应按实际 rule_version 解释。
+adviser 接受记录在标签 provenance，导出到 `annotations/labels.parquet` 和 `intervals.parquet` 的 annotation 记录。新版记录规则版本、输入数据/帧、稳定源 UUID/源帧、实际证据窗口、门控依赖、类别映射、标定、approved 依据和截断原因。旋转候选还保存 `provenance.rotation`，其中包括基座系、净角度、累计角度和可用的净旋转向量。旧候选可能使用旧的扁平窗口/coordinate_config 结构，应按实际 rule_version 解释。
 
 任务参考和辅助标定配置随 `annotations/behavior_protocol.json` 冻结导出；manifest.behavior_protocol 记录文件路径和 SHA-256。原始 tasks.jsonl 文本保持原样。附件只包含当前数据集的任务配置和分臂辅助 profiles；旧版未分数据集的备注另存为 legacy_task_notes。显式恢复导出标注时恢复该协议，并清除事件/位姿标定的 verified 和旧 binding，需重新核实；仅加载来源不恢复配置。协议保留使用者声明，不能证明单位、几何标定或语义标签正确。
 

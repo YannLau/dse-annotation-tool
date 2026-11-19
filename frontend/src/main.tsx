@@ -14,6 +14,7 @@ import {
 import "./style.css";
 import ExportInspector from "./ExportInspector";
 import BehaviorCalibration from "./BehaviorCalibration";
+import { missingRotationFields } from "./adviserFields";
 import DirectoryPicker from "./DirectoryPicker";
 import { FrameImageCache } from "./frameImages";
 import FloatingTimeline, { readPanelPosition } from "./FloatingTimeline";
@@ -677,6 +678,10 @@ function SchemaEditor({
     );
   }, [draft]);
   const field = draft.fields[index];
+  const rotationFields = missingRotationFields(
+    draft.fields,
+    draft.retired_fields,
+  );
   const update = (patch: Obj) => {
     setDraft({
       ...draft,
@@ -893,6 +898,18 @@ function SchemaEditor({
         >
           {tr("＋新增字段")}
         </button>
+        {rotationFields.length > 0 && (
+          <button
+            onClick={() => {
+              setDraft({ ...draft, fields: [...draft.fields, ...rotationFields] });
+              setIndex(draft.fields.length);
+              setPreview(null);
+              setDeletion(null);
+            }}
+          >
+            {tr("添加 adviser 旋转方向字段")}
+          </button>
+        )}
       </aside>
       <article>
         <div className="schema-field-heading">
