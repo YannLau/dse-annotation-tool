@@ -127,6 +127,14 @@ annotations/
 
 Exports contain all videos without symlinks to original paths and can be copied independently. Native LeRobot reads standard data/meta/videos but **does not automatically apply DSE annotations or loss**. Compatibility was tested with official `lerobot==0.3.3` (whose `CODEBASE_VERSION=v2.1`); the latest library cannot substitute for that specific test.
 
+### Per-frame C-text
+
+On the export page, select **Export per-frame C-text**. Generate a template for the current scheme, edit the JSON directly, or import a template from `dse_model`. A blank template uses `field=class`. A custom template contains the current `schema_hash`, a `template_version`, and `fields` keyed by field ID and class key. Supply a string for every non-unknown class. Use an empty string to omit a class.
+
+A native LeRobot sample exposes the full prompt in `c_text` and the original task in `task`. The suffix uses applicable, reviewed center-frame labels grouped by left arm, right arm, and global scope. Context frames and centers without renderable labels use the base task. Inspect the base task, suffix, full prompt, and fallback reason in `annotations/prompts.parquet` by `episode_index` and `frame_index`. The export saves the effective template in `annotations/template.json` and records its hash in `annotations/manifest.json`.
+
+API clients can get the current scheme template from `GET /api/export/c-text-template`. Include `"c_text": {}` in `POST /api/export` for default phrases or `"c_text": {"template": ...}` for a custom mapping.
+
 ## DSE Integration
 
 ```python

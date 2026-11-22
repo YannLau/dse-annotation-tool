@@ -1287,6 +1287,8 @@ function App() {
     [inspectPath, setInspectPath] = useState(""),
     [ratio, setRatio] = useState(0.7),
     [keyClasses, setKeyClasses] = useState<KeyClassRule[] | null>(null),
+    [includeCText, setIncludeCText] = useState(false),
+    [cTextTemplate, setCTextTemplate] = useState(""),
     [coordinate, setCoordinate] = useState<Obj>({
       verified: false,
       unit: "m",
@@ -1401,6 +1403,7 @@ function App() {
   const completionRequest = useRef(0);
   const completionAbort = useRef<AbortController | null>(null);
   const completionPanel = useRef<HTMLDivElement | null>(null);
+  const cTextFile = useRef<HTMLInputElement>(null);
   const visibleCompletion =
     completionResult?.context === completionContext ? completionResult : null;
   useEffect(() => {
@@ -3675,6 +3678,74 @@ function App() {
                   "类别选择按标注方案保存；字段或类别删除后，失效选择会被移除。模型训练始终使用模型配置中的采样比例，并重新计算训练权重。",
                 )}
               </p>
+              <h2>C-text</h2>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={includeCText}
+                  onChange={(e) => setIncludeCText(e.target.checked)}
+                />{" "}
+                {tr("导出逐帧 C-text")}
+              </label>
+              {includeCText && (
+                <>
+                  <p>
+                    {tr(
+                      "用中心帧已审核且适用的标签补充任务文本，保存在 c_text 字段。模板留空时使用字段=类别。",
+                    )}
+                  </p>
+                  <div className="toolbar">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const template = await api("/export/c-text-template");
+                          setCTextTemplate(JSON.stringify(template, null, 2));
+                        } catch (e) {
+                          fail(e);
+                        }
+                      }}
+                    >
+                      {tr("生成当前方案模板")}
+                    </button>
+                    <input
+                      ref={cTextFile}
+                      type="file"
+                      accept=".json,application/json"
+                      hidden
+                      onChange={async (e) => {
+                        const file = e.currentTarget.files?.[0];
+                        e.currentTarget.value = "";
+                        if (file) {
+                          try {
+                            setCTextTemplate(await file.text());
+                          } catch {
+                            fail(Error("无法读取 C-text 模板文件"));
+                          }
+                        }
+                      }}
+                    />
+                    <button onClick={() => cTextFile.current?.click()}>
+                      {tr("导入模板 JSON")}
+                    </button>
+                    <button
+                      disabled={!cTextTemplate}
+                      onClick={() => setCTextTemplate("")}
+                    >
+                      {tr("使用默认映射")}
+                    </button>
+                  </div>
+                  <label>
+                    {tr("C-text 模板 JSON")}
+                    <textarea
+                      className="c-text-template"
+                      rows={10}
+                      spellCheck={false}
+                      value={cTextTemplate}
+                      onChange={(e) => setCTextTemplate(e.target.value)}
+                    />
+                  </label>
+                </>
+              )}
               <button
                 className="primary"
                 disabled={
@@ -3683,6 +3754,22 @@ function App() {
                 }
                 onClick={async () => {
                   try {
+                    let template: Obj | null = null;
+                    const text = cTextTemplate.trim();
+                    if (includeCText && text) {
+                      try {
+                        template = JSON.parse(text);
+                        if (
+                          !template ||
+                          typeof template !== "object" ||
+                          Array.isArray(template)
+                        ) {
+                          throw Error();
+                        }
+                      } catch {
+                        throw Error("C-text 模板必须是有效的 JSON 对象");
+                      }
+                    }
                     await savePreferences();
                     const j = await api("/export", {
                       dataset: datasetKey,
@@ -3696,7 +3783,9 @@ function App() {
                         project.default_key_classes,
                       ),
                       expected_schema_version: project.schema.version,
+                      c_text: includeCText ? { template } : undefined,
                     });
+                    setError("");
                     setJob(j);
                   } catch (e) {
                     fail(e);

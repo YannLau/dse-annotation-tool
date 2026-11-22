@@ -128,6 +128,14 @@ annotations/
 
 导出含所有视频，未使用指向原始路径的 symlink；可独立复制。原生 LeRobot 读取标准 data/meta/videos，**不会自动应用 DSE annotations 或 loss**。兼容性使用官方 `lerobot==0.3.3`（其代码的 `CODEBASE_VERSION=v2.1`）实测，不能用最新版库替代该测试。
 
+### 逐帧 C-text
+
+在“导出数据集”勾选“导出逐帧 C-text”。点击“生成当前方案模板”后编辑文案，也可以导入或粘贴 `dse_model` 生成的模板 JSON。留空时使用 `字段=类别`。模板需要当前方案的 `schema_hash`、自定义的 `template_version` 和按字段 ID、类别 key 索引的 `fields`。为每个字段的全部非 unknown 类别填写字符串，使用空字符串省略对应类别。
+
+导出后，原生 LeRobot 样本的 `c_text` 字段包含原任务、换行和按左臂、右臂、全局组织的标签文本。文本来自当前方案中已审核且适用的中心帧标签。上下文帧和没有可用文案的中心帧使用原任务。样本的 `task` 字段提供原始任务，`annotations/prompts.parquet` 可按 `episode_index` 和 `frame_index` 查看原任务、后缀、完整提示词与回退原因。模板快照保存在 `annotations/template.json`，哈希记录在 `annotations/manifest.json`。
+
+API 可通过 `GET /api/export/c-text-template` 获取当前方案模板。在 `POST /api/export` 请求中加入 `"c_text": {}` 使用默认文案，或加入 `"c_text": {"template": ...}` 传入自定义模板。
+
 ## 接入 DSE
 
 ```python

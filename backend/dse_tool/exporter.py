@@ -14,11 +14,27 @@ import av
 import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
+from .c_text import C_TEXT_FEATURE, CTextRenderer
 from .dataset import Dataset, content_fingerprint
 from .schema import digest, head_spec
 from . import __version__
 from .history import HistoryConfig
 from .sampling import sampling_policy, sampling_metadata, sample_pool_group
+
+
+PROMPT_SCHEMA = pa.schema(
+    [
+        ("episode_index", pa.int64()),
+        ("frame_index", pa.int64()),
+        ("source_episode_uuid", pa.string()),
+        ("source_frame_index", pa.int64()),
+        ("base_task", pa.string()),
+        ("dse_suffix", pa.string()),
+        ("combined_prompt", pa.string()),
+        ("fallback_reason", pa.string()),
+        ("template_version", pa.string()),
+    ]
+)
 
 
 def write_json(path, obj):
@@ -50,6 +66,7 @@ class Exporter:
         history_context_seconds=None,
         key_classes=None,
         expected_schema_version=None,
+        c_text=None,
     ):
         history_config = HistoryConfig.from_dict(history_config)
         history_context_seconds = (
@@ -128,6 +145,7 @@ class Exporter:
             ):
                 raise ValueError("标注规则版本已变化，请刷新后重新选择关键类别")
             policy = sampling_policy(schema, key_classes)
+            renderer = CTextRenderer(schema, **c_text) if c_text is not None else None
             schema_history = [
                 json.loads(r["payload"])
                 for r in self.store.db.execute(
@@ -164,6 +182,7 @@ class Exporter:
                 history_config,
                 history_context_seconds,
                 policy,
+                renderer,
             ),
             daemon=True,
         )
@@ -186,6 +205,7 @@ class Exporter:
         history_config=None,
         history_context_seconds=None,
         policy=None,
+        renderer=None,
     ):
         history_config = HistoryConfig.from_dict(history_config)
         history_context_seconds = (
@@ -234,9 +254,19 @@ class Exporter:
                 if parent_manifest_path.exists()
                 else {}
             )
+            replace_c_text = renderer is not None or bool(parent_manifest.get("c_text"))
+            if renderer is not None:
+                info["features"][C_TEXT_FEATURE] = {
+                    "dtype": "string",
+                    "shape": [1],
+                    "names": None,
+                }
+            elif replace_c_text:
+                info["features"].pop(C_TEXT_FEATURE, None)
             labels = []
             samples = []
             source_map = []
+            prompts = []
             ep_meta = []
             ep_stats = []
             global_index = 0
@@ -252,6 +282,12 @@ class Exporter:
                 "warnings": [],
                 "segments": [],
             }
+            if renderer is not None:
+                summary["c_text"] = {
+                    "with_suffix": 0,
+                    "no_renderable_labels": 0,
+                    "context_only": 0,
+                }
             global_numeric = {}
             video_stats = {}
             chunk_size = info.get("chunks_size", 1000)
@@ -266,6 +302,7 @@ class Exporter:
                 for t in dataset.tasks
                 if t["task_index"] in task_remap
             ]
+            task_text = {task["task_index"]: task["task"] for task in tasks_export}
             # Merge contiguous selections, never join across a gap.
             merged = []
             for s in selections:
@@ -325,6 +362,23 @@ class Exporter:
                     )
                     center = start <= low + j < end
                     effective = frozen_store.labels(source, source_frame, center)
+                    if renderer is not None:
+                        prompt = renderer.render(
+                            task_text[r["task_index"]], effective, center
+                        )
+                        r[C_TEXT_FEATURE] = prompt["combined_prompt"]
+                        prompts.append(
+                            {
+                                "episode_index": new_ep,
+                                "frame_index": j,
+                                "source_episode_uuid": source,
+                                "source_frame_index": source_frame,
+                                **prompt,
+                            }
+                        )
+                        summary["c_text"][
+                            prompt["fallback_reason"] or "with_suffix"
+                        ] += 1
                     phase_values = [
                         effective[a].get("phase", {}).get("value_id")
                         if schema.get("semantic_profile", "dse_v1") == "dse_v1"
@@ -490,15 +544,23 @@ class Exporter:
                     else:
                         summary["context_count"] += 1
                 original_table = dataset.table(old_ep)
+                column_types = dict(
+                    zip(original_table.column_names, original_table.schema.types)
+                )
+                if renderer is not None:
+                    column_types[C_TEXT_FEATURE] = pa.string()
+                elif replace_c_text:
+                    column_types.pop(C_TEXT_FEATURE, None)
                 columns = {}
-                for col in original_table.column_names:
-                    typ = original_table[col].type
+                for col, typ in column_types.items():
                     columns[col] = pa.array([r[col] for r in selected_rows], type=typ)
                     if col == "timestamp":
                         info["features"][col]["dtype"] = (
                             "float64" if pa.types.is_float64(typ) else "float32"
                         )
                     f = info["features"].get(col, {})
+                    if f.get("dtype") == "string":
+                        continue
                     scalar = (
                         typ.value_type
                         if pa.types.is_list(typ) or pa.types.is_fixed_size_list(typ)
@@ -632,14 +694,7 @@ class Exporter:
                         )
                     )
                 tasks = list(
-                    dict.fromkeys(
-                        next(
-                            t["task"]
-                            for t in tasks_export
-                            if t["task_index"] == r["task_index"]
-                        )
-                        for r in selected_rows
-                    )
+                    dict.fromkeys(task_text[r["task_index"]] for r in selected_rows)
                 )
                 ep_meta.append(
                     {
@@ -733,6 +788,22 @@ class Exporter:
             write_json(ann / "schema.json", schema)
             write_json(ann / "schema_history.json", schema_history or [schema])
             write_json(ann / "head_spec.json", head_spec(schema))
+            c_text_manifest = {}
+            if renderer is not None:
+                prompts_path = ann / "prompts.parquet"
+                template_path = ann / "template.json"
+                pq.write_table(
+                    pa.Table.from_pylist(prompts, schema=PROMPT_SCHEMA), prompts_path
+                )
+                write_json(template_path, renderer.template)
+                c_text_manifest["c_text"] = {
+                    "feature": C_TEXT_FEATURE,
+                    "label_source": "reviewed_annotations",
+                    "prompts_path": str(prompts_path.relative_to(temporary)),
+                    "template_path": str(template_path.relative_to(temporary)),
+                    "template_version": renderer.template["template_version"],
+                    "template_hash": digest(renderer.template),
+                }
             # Explicit nullable categorical integers even when a whole field is missing.
             label_table = pa.Table.from_pylist(labels)
             for name in ["value_id", "schema_version", "revision"]:
@@ -814,6 +885,7 @@ class Exporter:
                     },
                     "checksums": checksums,
                     "source_roots_required": False,
+                    **c_text_manifest,
                 },
             )
             # Verify every output mapping, actual media and metadata before publication.

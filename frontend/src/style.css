@@ -935,6 +935,10 @@ nav button {
 .settings button {
   margin: 5px 5px 5px 0;
 }
+.c-text-template {
+  font-family: ui-monospace, monospace;
+  resize: vertical;
+}
 .settings pre,
 .batch-preview pre {
   overflow: auto;

@@ -14,7 +14,7 @@ import pyarrow.parquet as pq
 from fastapi import FastAPI, Query
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from . import __version__
 from .dataset import Dataset, content_fingerprint, verify_manifest
 from .schemes import Schemes
@@ -31,6 +31,7 @@ from .schema import (
 from .adviser import install_adviser_routes
 from .events import channel_catalog, preview_events, save_events
 from .history import HistoryConfig
+from .c_text import template_skeleton
 from .sampling import default_key_classes
 from .inspector import ExportInspector, clean
 from .ranges import effective_ranges
@@ -113,6 +114,11 @@ class SelectionRequest(BaseModel):
     remove: bool = False
 
 
+class CTextSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    template: dict | None = None
+
+
 class ExportRequest(BaseModel):
     dataset: str
     destination: str
@@ -123,6 +129,7 @@ class ExportRequest(BaseModel):
     history_context_seconds: float | None = Field(
         default=None, ge=0, le=3600, allow_inf_nan=False
     )
+    c_text: CTextSettings | None = None
 
 
 class ReviewRequest(BaseModel):
@@ -1221,6 +1228,10 @@ def create_app(work_root):
 
     install_adviser_routes(app, store, get_dataset, bounds)
 
+    @app.get("/api/export/c-text-template")
+    def c_text_template():
+        return template_skeleton(store.schema())
+
     @app.post("/api/export")
     def export(body: ExportRequest):
         ds = get_dataset(body.dataset)
@@ -1242,6 +1253,7 @@ def create_app(work_root):
             history_context_seconds=body.history_context_seconds,
             key_classes=body.key_classes,
             expected_schema_version=body.expected_schema_version,
+            c_text=body.c_text.model_dump() if body.c_text is not None else None,
         )
 
     @app.get("/api/jobs/{job_id}")
